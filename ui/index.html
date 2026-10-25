@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0d12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Piano LED">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Piano LED</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><img src="/icon.svg" alt=""><span>Piano LED</span></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="library" role="tab">Library</button>
+    <button class="tab" data-view="player" role="tab">Play</button>
+    <button class="tab" data-view="settings" role="tab">Settings</button>
+  </nav>
+  <div class="topright">
+    <span id="conn" class="conn" title="Connection to the Pi"></span>
+    <button id="fullscreen" class="icon-btn" aria-label="Full screen">⛶</button>
+  </div>
+</header>
+
+<main>
+  <section id="library" class="view active">
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search songs…" autocomplete="off">
+      <label class="btn">Upload .mid<input id="upload" type="file" accept=".mid,.midi,audio/midi" multiple hidden></label>
+    </div>
+    <ul id="songs" class="songlist"></ul>
+  </section>
+
+  <section id="player" class="view">
+    <div class="songbar">
+      <span id="title" class="title">No song loaded</span>
+      <span id="time" class="time">0:00 / 0:00</span>
+    </div>
+    <div class="stage">
+      <canvas id="roll"></canvas>
+      <div id="waiting" class="badge" hidden>Waiting for you…</div>
+      <div id="empty" class="empty">Pick a song in the Library to start.</div>
+    </div>
+    <div class="controls">
+      <div class="row">
+        <button id="restart" class="icon-btn big" aria-label="Restart">⏮</button>
+        <button id="play" class="icon-btn big primary" aria-label="Play">▶</button>
+        <input id="scrub" type="range" min="0" max="1" value="0" step="10" aria-label="Position">
+      </div>
+      <div class="row wrap">
+        <div class="seg" id="mode">
+          <button data-v="wait">Wait for me</button>
+          <button data-v="other">Play along</button>
+          <button data-v="listen">Listen</button>
+        </div>
+        <div class="seg" id="hand">
+          <button data-v="left">Left</button>
+          <button data-v="both">Both</button>
+          <button data-v="right">Right</button>
+        </div>
+        <label class="tempo">Tempo <input id="tempo" type="range" min="25" max="150" step="5" value="100"><b id="tempoval">100%</b></label>
+        <div class="seg small" id="loop">
+          <button data-v="a">A</button><button data-v="b">B</button><button data-v="clear">✕</button>
+        </div>
+        <div class="seg" id="view">
+          <button data-v="waterfall">Waterfall</button>
+          <button data-v="sheet">Sheet</button>
+        </div>
+        <button id="tracksbtn" class="btn ghost">Tracks</button>
+      </div>
+    </div>
+    <dialog id="tracks">
+      <h3>Which hand plays each track?</h3>
+      <div id="tracklist"></div>
+      <form method="dialog"><button class="btn">Done</button></form>
+    </dialog>
+  </section>
+
+  <section id="settings" class="view">
+    <form id="settingsform" class="cards" autocomplete="off">
+      <fieldset class="card">
+        <legend>Look</legend>
+        <label>Brightness <input name="brightness" type="range" min="0" max="255"></label>
+        <label>Key colour
+          <span class="inline"><select name="colormode"><option value="rainbow">Rainbow</option><option value="single">Single colour</option></select>
+          <input name="color" type="color"></span></label>
+        <label>Backlight
+          <span class="inline"><input name="backlight_brightness" type="range" min="0" max="255" aria-label="Backlight brightness">
+          <input name="backlight_color" type="color" aria-label="Backlight colour"></span>
+          <small>Constant glow along the keys. Slide to the left to turn it off.</small></label>
+        <label>Right hand hint <input name="right_color" type="color"></label>
+        <label>Left hand hint <input name="left_color" type="color"></label>
+        <label>Fade (ms) <input name="fade_ms" type="number" min="0" max="20000" step="50"></label>
+        <label class="check"><input name="velocity" type="checkbox"> Brightness follows velocity</label>
+      </fieldset>
+      <fieldset class="card">
+        <legend>Practice</legend>
+        <label>Player view <select name="view_mode"><option value="waterfall">Waterfall (falling notes)</option><option value="sheet">Sheet music (staff)</option></select></label>
+        <label class="check"><input name="note_names" type="checkbox"> Show note names</label>
+        <label>Hand reach (semitones) <input name="hand_reach" type="number" min="0" max="48">
+          <small id="reachhelp">16 = C3 to E4. Wider chords: the piano plays the notes you can't reach. 0 = off.</small></label>
+        <label>MIDI port <select name="midi_port"></select></label>
+      </fieldset>
+      <fieldset class="card">
+        <legend>Install as app (Android)</legend>
+        <small id="installstate"></small>
+        <ol class="steps">
+          <li><a class="btn" href="/ca.crt" download>Download certificate</a></li>
+          <li>Android settings → Security → More security settings → Encryption &amp; credentials → Install a certificate → <b>CA certificate</b>, and pick the downloaded file.</li>
+          <li>Open <a id="httpslink" href="#"></a> in Chrome, then menu → <b>Install app</b>.</li>
+        </ol>
+        <small>The certificate is made by your Pi and only works for it. On an iPad, Share → Add to Home Screen works without this.</small>
+      </fieldset>
+      <fieldset class="card">
+        <legend>LED strip</legend>
+        <label>LEDs per metre <input name="leds_per_meter" type="number" min="1" max="500"></label>
+        <label>Shift <input name="shift" type="number" min="-500" max="500"></label>
+        <label class="check"><input name="reverse" type="checkbox"> Reversed (LED 0 at the treble end)</label>
+        <label>LEDs per key <input name="span" type="number" min="1" max="16"></label>
+        <label>Note offsets <input name="note_offsets" type="text" placeholder="92:2, 55:1"></label>
+        <label>Current limit (mA, 0 = off) <input name="max_ma" type="number" min="0" step="100"></label>
+        <label>LED count <input name="led_count" type="number" min="1" max="2000"><small>Applies after a restart.</small></label>
+      </fieldset>
+    </form>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+<script src="/app.js"></script>
+</body>
+</html>

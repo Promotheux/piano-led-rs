@@ -1,0 +1,12 @@
+/target
+
+# Written next to the binary when plv runs from this folder (`cargo run`):
+# saved UI settings and the local HTTPS certificate authority and keys.
+/settings.json
+/settings.json.tmp
+/ca.key
+/ca.crt
+/ca.pem
+/server.key
+/server.crt
+/server.names

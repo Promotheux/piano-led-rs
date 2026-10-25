@@ -1,0 +1,26 @@
+[Unit]
+Description=Piano LED Visualizer (Rust engine + tablet app)
+After=sound.target network-online.target rtpmidid.service
+Wants=network-online.target
+# Both drive GPIO18 and port 80; never run alongside the Python visualizer.
+Conflicts=visualizer.service
+
+[Service]
+# PWM driver (GPIO18, default with --features pwm) needs root for /dev/mem.
+# For the SPI driver you can instead run unprivileged:
+#   User=plv / SupplementaryGroups=spi audio / add --driver spi (and a port above 1024)
+User=root
+# Settings (LEDs, colours, MIDI port, hand reach) are edited in the app and
+# saved to /var/lib/plv/settings.json; flags here only seed the first start.
+StateDirectory=plv
+ExecStart=/usr/local/bin/plv --http 0.0.0.0:80 --https 0.0.0.0:443 --songs /home/Piano-LED-Visualizer/Songs --settings /var/lib/plv/settings.json
+Restart=on-failure
+RestartSec=2
+# Keep frame timing tight on a loaded system.
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=50
+Nice=-10
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target
