@@ -20,6 +20,10 @@ Prioritized: work top to bottom. Tick items off as they land.
   - Instant LED feedback: green for correct; red, with the right key revealed
     in blue, for incorrect.
   - Streak tracking, accuracy score and adaptive octave range.
+- [ ] **Harmonic ear training & chord progressions**: the app prompts a Roman
+      numeral progression (e.g. ii–V–I in G major) by sound or symbol; you play
+      the chords in any voicing, and it scores the harmony (right chord
+      function and quality) rather than exact notes.
 - [ ] **Smart loop practice**: A–B loop that raises the tempo automatically after
       each clean pass (e.g. 60% → 100% in 5% steps).
 - [ ] **Metronome and count-in** for Play-along mode.
