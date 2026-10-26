@@ -13,6 +13,13 @@ Prioritized: work top to bottom. Tick items off as they land.
 
 ## Phase 2: Practice features & learning engine
 
+- [ ] **Perfect pitch trainer mode**:
+  - Single note, chord quality and interval identification drills, answered on
+    the piano (MIDI input).
+  - Strict mode (blind test) or a reference drone / relative aid.
+  - Instant LED feedback: green for correct; red, with the right key revealed
+    in blue, for incorrect.
+  - Streak tracking, accuracy score and adaptive octave range.
 - [ ] **Smart loop practice**: A–B loop that raises the tempo automatically after
       each clean pass (e.g. 60% → 100% in 5% steps).
 - [ ] **Metronome and count-in** for Play-along mode.
