@@ -25,9 +25,8 @@ pub const HINT_RIGHT: u8 = 1;
 pub const HINT_LEFT: u8 = 2;
 pub const HINT_BRIGHT: u8 = 4;
 pub const HINT_BLINK: u8 = 8;
-/// High nibble: preview level 1..=15 for a note that hasn't started yet
-/// (15 = about to start). Zero for every other kind of hint.
-pub const HINT_PREVIEW_SHIFT: u8 = 4;
+/// The next notes after the ones to play now (wait mode), shown faintly.
+pub const HINT_PREVIEW: u8 = 16;
 
 pub struct NoteState {
     held: [AtomicU8; 128],

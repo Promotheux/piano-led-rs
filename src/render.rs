@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use crate::color::{GammaLut, Rgb};
 use crate::hal::LedDriver;
 use crate::keymap::KeyMap;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_PREVIEW_SHIFT};
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_PREVIEW};
 use crate::settings::{Settings, SettingsStore};
 
 /// Envelope level is 8.8 fixed point: 0..=MAX_LEVEL.
@@ -21,9 +21,8 @@ const HINT_AUTO: u8 = 160;
 const RESTRIKE_DIM: u8 = 64;
 /// ...for this long, then jumps back to full, so repeated notes separate.
 const RESTRIKE_GAP_US: u32 = 40_000;
-/// Preview brightness range (of 255) for upcoming notes, far -> about to start.
-const PREVIEW_MIN: u32 = 18;
-const PREVIEW_MAX: u32 = 70;
+/// Level (of 255) of the faint preview of the next notes.
+const PREVIEW: u8 = 40;
 /// Backlight turns off after this long with no keys pressed and no song playing.
 const SCREENSAVER_US: u64 = 120_000_000;
 /// Half period of the "you're taking long" blink (8 flashes per second).
@@ -159,7 +158,7 @@ impl Renderer {
                 // Judge the press against what the player expects right now.
                 let h = notes.hint(n);
                 // Previews (high nibble) are not "expected yet".
-                let expected = h & 3 != 0 && h & HINT_BRIGHT == 0 && h >> HINT_PREVIEW_SHIFT == 0;
+                let expected = h & 3 != 0 && h & (HINT_BRIGHT | HINT_PREVIEW) == 0;
                 self.feedback[n] = practice.then(|| if expected { RIGHT_KEY } else { WRONG_KEY });
                 self.peak[n] = if self.cfg.velocity {
                     // Velocity curve: floor at ~25% so soft notes stay visible.
@@ -184,11 +183,9 @@ impl Renderer {
             } else if h != 0 {
                 // Keys you play win; otherwise show the player's hint.
                 let hand = self.hand_color[((h & 3) as usize).saturating_sub(1).min(1)];
-                let preview = (h >> HINT_PREVIEW_SHIFT) as u32;
-                if preview != 0 {
-                    // Upcoming note: faint, a little above the backlight so it shows.
-                    let l = PREVIEW_MIN + (PREVIEW_MAX - PREVIEW_MIN) * (preview - 1) / 14;
-                    let c = self.gamma.apply(hand.scale(l as u8));
+                if h & HINT_PREVIEW != 0 {
+                    // Next notes: faint, a little above the backlight so it shows.
+                    let c = self.gamma.apply(hand.scale(PREVIEW));
                     let floor = (hint_floor / 2).saturating_add(2);
                     if c.r.max(c.g).max(c.b) < floor { hand.scale(floor) } else { c }
                 } else {
@@ -456,11 +453,11 @@ mod tests {
         let mut r = renderer();
         r.hand_color = [Rgb::new(0, 0, 255), Rgb::new(0, 255, 0)];
         let notes = NoteState::new();
-        notes.set_hint(60, crate::notes::HINT_RIGHT | 15 << HINT_PREVIEW_SHIFT);
-        notes.set_hint(62, crate::notes::HINT_RIGHT | 1 << HINT_PREVIEW_SHIFT);
+        notes.set_hint(60, crate::notes::HINT_RIGHT | HINT_PREVIEW);
+        notes.set_hint(62, crate::notes::HINT_RIGHT);
         r.update(&notes, Duration::ZERO);
-        let (near, far) = (r.pixels()[80].b, r.pixels()[84].b);
-        assert!(far > 0 && far < near && near < 100, "faint, brighter when closer: {far} {near}");
+        let (preview, full) = (r.pixels()[80].b, r.pixels()[84].b);
+        assert!(preview > 0 && preview < full / 4, "faint next note: {preview} vs {full}");
         // Pressing a key that's only previewed counts as wrong (red).
         notes.set_practice(true);
         notes.note_on(60, 127);

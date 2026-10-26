@@ -14,7 +14,7 @@ use midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 use serde::{Deserialize, Serialize};
 
 use crate::midi::MidiOut;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW_SHIFT, HINT_RIGHT};
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_RIGHT};
 
 /// Notes starting within this window count as one chord in wait mode.
 const CHORD_MS: u32 = 60;
@@ -23,8 +23,6 @@ const LEAD_IN_MS: f64 = 2000.0;
 /// A press up to this long (song time) before a note counts for it, and keys
 /// to play light up this early, so slightly early playing is judged right.
 const EARLY_MS: f64 = 250.0;
-/// Upcoming notes glow faintly on the strip this far ahead.
-const PREVIEW_MS: f64 = 2000.0;
 /// Waiting this long on a chord makes its unpressed keys blink.
 const BLINK_AFTER_MS: f64 = 3000.0;
 /// Default hand reach in semitones (C3..E4, a tenth).
@@ -541,18 +539,20 @@ impl State {
 
     fn hints(&self) -> [u8; 128] {
         let mut h = [0u8; 128];
-        let Some(song) = &self.song else { return h };
+        // Paused or stopped: no song on the strip, just the normal key display.
+        let Some(song) = self.song.as_ref().filter(|_| self.playing) else { return h };
         // While waiting, show the whole chord we're stopped in front of.
         let ahead = if self.waiting { CHORD_MS as f64 + 1.0 } else { EARLY_MS };
         let lo = self.pos - song.max_dur as f64;
         let first = song.notes.partition_point(|n| (n.t as f64) < lo);
-        // Start time of the next upcoming note per hand [right, left]: only that
-        // note (or chord) is previewed, so the strip never shows a queue.
-        let mut next_onset: [Option<u32>; 2] = [None, None];
+        // Like the original's "future notes": in wait mode, the single next time
+        // slice after the notes to play now (both hands, however far ahead),
+        // except keys that are already lit.
+        let mut next_onset: Option<u32> = None;
         for i in first..song.notes.len() {
             let n = &song.notes[i];
             let t = n.t as f64;
-            if t > self.pos + PREVIEW_MS {
+            if next_onset.is_some_and(|o| n.t > o + CHORD_MS) {
                 break;
             }
             if self.ignored(n) {
@@ -560,13 +560,12 @@ impl State {
             }
             let hand = if self.hand_of(n) == Hand::Right { HINT_RIGHT } else { HINT_LEFT };
             if t > self.pos + ahead {
-                // Not started yet: faint preview, brighter as it gets closer.
-                // Notes come in time order, so a key that's already lit keeps its hint.
-                let onset = next_onset[(hand == HINT_LEFT) as usize].get_or_insert(n.t);
-                if n.t <= *onset + CHORD_MS && h[n.key as usize] == 0 {
-                    let closeness = 1.0 - (t - self.pos) / PREVIEW_MS;
-                    let level = (1.0 + 14.0 * closeness).clamp(1.0, 15.0) as u8;
-                    h[n.key as usize] = hand | level << HINT_PREVIEW_SHIFT;
+                if self.mode != Mode::Wait {
+                    break;
+                }
+                next_onset.get_or_insert(n.t);
+                if h[n.key as usize] == 0 {
+                    h[n.key as usize] = hand | HINT_PREVIEW;
                 }
                 continue;
             }
@@ -996,35 +995,43 @@ mod tests {
     }
 
     #[test]
-    fn upcoming_notes_preview_gets_brighter() {
-        let p = player_with(song(&[(1500, 200, 72, 0), (2500, 200, 74, 0), (9000, 200, 76, 0)]), Mode::Other);
+    fn preview_is_the_next_time_slice_only() {
+        // Right chord at 0 (72+76), then left 40 at 800, then right 74 at 1500.
+        let p = player_with(
+            song(&[(0, 100, 72, 0), (10, 100, 76, 0), (800, 100, 40, 1), (1500, 100, 74, 0)]),
+            Mode::Wait,
+        );
+        p.command(Command { hand: Some(Practise::Both), ..Default::default() }).unwrap();
         let mut out = vec![];
-        run_ms(&p, 2000, &[], &mut out); // pos ~ 0
+        run_ms(&p, 2000, &[], &mut out); // waiting at the first chord
         let h = p.state.lock().unwrap().hints();
-        let level = |v: u8| v >> HINT_PREVIEW_SHIFT;
-        assert!(level(h[72]) > level(h[74]) && level(h[74]) == 0, "72 in 1.5 s, 74 beyond 2 s");
-        assert!(level(h[72]) > 0 && h[72] & 3 == HINT_RIGHT);
-        assert_eq!(h[76], 0, "far future: dark");
-        run_ms(&p, 1400, &[], &mut out); // pos ~ 1400: 72 now inside the play window
+        assert_eq!((h[72], h[76]), (HINT_RIGHT, HINT_RIGHT), "keys to play now");
+        assert_eq!(h[40], HINT_LEFT | HINT_PREVIEW, "next slice, whichever hand");
+        assert_eq!(h[74], 0, "not the slice after it");
+        // Play the chord: now 40 is due and 74 becomes the preview.
+        run_ms(&p, 850, &[72, 76], &mut out);
         let h = p.state.lock().unwrap().hints();
-        assert_eq!(h[72], HINT_RIGHT, "becomes a normal hint");
-        assert!(level(h[74]) > 0);
+        assert_eq!(h[40], HINT_LEFT);
+        assert_eq!(h[74], HINT_RIGHT | HINT_PREVIEW);
+        // Outside wait mode there is no preview.
+        p.command(Command { mode: Some(Mode::Other), ..Default::default() }).unwrap();
+        run_ms(&p, 10, &[72, 76], &mut out);
+        assert_eq!(p.state.lock().unwrap().hints()[74] & HINT_PREVIEW, 0);
     }
 
     #[test]
-    fn preview_shows_only_the_next_note_or_chord_per_hand() {
-        // Right hand: chord at 1000 (72+76), then 74 at 1500. Left hand: 40 at 1200, 43 at 1600.
-        let p = player_with(
-            song(&[(1000, 100, 72, 0), (1010, 100, 76, 0), (1500, 100, 74, 0), (1200, 100, 40, 1), (1600, 100, 43, 1)]),
-            Mode::Other,
-        );
+    fn pausing_clears_the_song_from_the_strip() {
+        let p = player_with(song(&[(0, 5000, 72, 0), (1000, 100, 74, 0)]), Mode::Other);
         let mut out = vec![];
-        run_ms(&p, 2000, &[], &mut out); // pos ~ 0
-        let h = p.state.lock().unwrap().hints();
-        let previewed = |k: usize| h[k] >> HINT_PREVIEW_SHIFT != 0;
-        assert!(previewed(72) && previewed(76), "whole next right-hand chord");
-        assert!(!previewed(74), "not the one after it");
-        assert!(previewed(40) && !previewed(43), "left hand gets its own next note");
+        run_ms(&p, 2200, &[], &mut out);
+        assert_ne!(p.state.lock().unwrap().hints(), [0u8; 128]);
+        p.command(Command { playing: Some(false), ..Default::default() }).unwrap();
+        assert_eq!(p.state.lock().unwrap().hints(), [0u8; 128]);
+        // Waiting in wait mode is still playing: hints stay.
+        p.command(Command { mode: Some(Mode::Wait), playing: Some(true), seek: Some(-100.0), ..Default::default() }).unwrap();
+        run_ms(&p, 300, &[], &mut out);
+        assert!(p.status().waiting);
+        assert_ne!(p.state.lock().unwrap().hints()[72], 0);
     }
 
     #[test]
