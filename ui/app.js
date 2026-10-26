@@ -307,10 +307,26 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
+let shownPos = 0;
 function displayPos() {
   if (!live) return 0;
   const run = live.playing && !live.waiting ? (performance.now() - liveAt) * (live.tempo / 100) : 0;
-  return live.pos + Math.min(run, 250); // never extrapolate far past the last update
+  let pos = live.pos + Math.min(run, 250); // never extrapolate far past the last update
+  // Wait mode: the Pi stops just before the next chord of your hand, so don't
+  // draw past it (otherwise the notes overshoot and snap back when it stops).
+  if (live.playing && live.mode === 'wait' && song) {
+    for (let i = firstFrom(live.pos + 1); i < song.notes.length; i++) {
+      if (song.notes[i][0] > pos) break;
+      if (practised(song.notes[i])) {
+        pos = Math.min(pos, song.notes[i][0] - 0.5);
+        break;
+      }
+    }
+  }
+  // Small steps backwards read as jitter; real jumps (seek, loop) still snap.
+  if (pos < shownPos && shownPos - pos < 400) pos = shownPos;
+  shownPos = pos;
+  return pos;
 }
 
 function practised(n) {
