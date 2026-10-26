@@ -46,7 +46,9 @@ button:active { transform: scale(.97); }
 .songlist li:hover { border-color: #3a4260; }
 .songlist li.current { border-color: var(--accent); }
 .songlist .name { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.songlist .size { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.songlist .size { color: var(--muted); font-size: 13px; white-space: nowrap; margin-left: auto; }
+.songlist .del { min-width: 40px; min-height: 40px; font-size: 16px; background: none; border-color: transparent; opacity: .6; }
+.songlist .del:hover { opacity: 1; border-color: var(--line); }
 
 #player { padding: 0; gap: 0; overflow: hidden; }
 .songbar { display: flex; justify-content: space-between; padding: 10px 16px; gap: 12px; }

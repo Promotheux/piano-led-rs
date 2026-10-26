@@ -90,6 +90,7 @@ fn handle(app: &Arc<App>, mut req: Request) {
         },
         (Method::Get, "/api/songs") => list_songs(&app.songs_dir),
         (Method::Post, "/api/songs") => upload(app, &mut req, query),
+        (Method::Delete, "/api/songs") => delete_song(app, query),
         (Method::Get, "/api/settings") => json(&app.settings.get()),
         (Method::Put, "/api/settings") => put_settings(app, &mut req),
         (Method::Get, "/api/ports") => match midi::list_ports() {
@@ -217,12 +218,36 @@ fn list_songs(dir: &Path) -> Resp {
     json(&serde_json::json!({ "songs": songs }))
 }
 
+/// The `name=` query parameter, decoded.
+fn name_param(query: &str) -> String {
+    query.split('&').find_map(|kv| kv.strip_prefix("name=")).map(percent_decode).unwrap_or_default()
+}
+
+/// An existing song with exactly these bytes, if any. Only files of the same
+/// size are read, so this stays cheap even for hundreds of songs.
+fn find_duplicate(dir: &Path, body: &[u8]) -> Option<String> {
+    std::fs::read_dir(dir).ok()?.filter_map(Result::ok).find_map(|e| {
+        let name = e.file_name().into_string().ok()?;
+        song_path(dir, &name)?;
+        let same_size = e.metadata().ok()?.len() == body.len() as u64;
+        (same_size && std::fs::read(e.path()).ok()? == body).then_some(name)
+    })
+}
+
+fn delete_song(app: &App, query: &str) -> Resp {
+    let name = name_param(query);
+    let Some(path) = song_path(&app.songs_dir, &name) else {
+        return error(400, "invalid song name");
+    };
+    match std::fs::remove_file(&path) {
+        Ok(()) => json(&serde_json::json!({ "deleted": name })),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => error(404, "no such song"),
+        Err(e) => error(500, &format!("delete failed: {e}")),
+    }
+}
+
 fn upload(app: &App, req: &mut Request, query: &str) -> Resp {
-    let name = query
-        .split('&')
-        .find_map(|kv| kv.strip_prefix("name="))
-        .map(percent_decode)
-        .unwrap_or_default();
+    let name = name_param(query);
     let Some(path) = song_path(&app.songs_dir, &name) else {
         return error(400, "name must be a .mid file name");
     };
@@ -235,6 +260,9 @@ fn upload(app: &App, req: &mut Request, query: &str) -> Resp {
     };
     if let Err(e) = player::parse(&body) {
         return error(422, &e);
+    }
+    if let Some(existing) = find_duplicate(&app.songs_dir, &body) {
+        return error(409, &format!("already in your library as {existing}"));
     }
     // shortcut: no free-space check; a full disk surfaces as a write error.
     let tmp = path.with_extension("upload.tmp");
@@ -328,6 +356,20 @@ mod tests {
         for bad in ["../x.mid", "a/b.mid", "a\\b.mid", ".hidden.mid", "x.txt", "", "c:x.mid"] {
             assert_eq!(song_path(d, bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn duplicates_are_found_by_content() {
+        let dir = std::env::temp_dir().join(format!("plv-dup-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.mid"), b"MThd-one").unwrap();
+        std::fs::write(dir.join("b.mid"), b"MThd-two").unwrap(); // same size, other bytes
+        std::fs::write(dir.join("notes.txt"), b"MThd-one").unwrap(); // not a song
+        assert_eq!(find_duplicate(&dir, b"MThd-one").as_deref(), Some("a.mid"));
+        assert_eq!(find_duplicate(&dir, b"MThd-new"), None);
+        assert_eq!(find_duplicate(&dir, b"different length"), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

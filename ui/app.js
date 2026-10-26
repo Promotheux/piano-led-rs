@@ -196,10 +196,22 @@ function renderSongs() {
     const li = document.createElement('li');
     li.dataset.name = s.name;
     li.classList.toggle('current', live && live.song === s.name);
-    li.innerHTML = `<span class="name">${escapeHtml(prettyName(s.name))}</span><span class="size">${Math.max(1, Math.round(s.size / 1024))} KB</span>`;
+    li.innerHTML = `<span class="name">${escapeHtml(prettyName(s.name))}</span><span class="size">${Math.max(1, Math.round(s.size / 1024))} KB</span>` +
+      `<button class="icon-btn del" aria-label="Delete ${escapeHtml(prettyName(s.name))}">🗑</button>`;
     li.addEventListener('click', async () => {
       await player({ song: s.name });
       show('player');
+    });
+    li.querySelector('.del').addEventListener('click', async (e) => {
+      e.stopPropagation(); // don't open the song
+      if (!confirm(`Delete "${prettyName(s.name)}"? This removes the file from the Pi.`)) return;
+      try {
+        await api(`/api/songs?name=${encodeURIComponent(s.name)}`, { method: 'DELETE' });
+        toast(`Deleted ${prettyName(s.name)}`);
+        loadSongs();
+      } catch (err) {
+        toast(err.message, true);
+      }
     });
     ul.append(li);
   }
