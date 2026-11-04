@@ -24,6 +24,9 @@ const LEAD_IN_MS: f64 = 2000.0;
 /// A press up to this long (song time) before a note counts for it, and keys
 /// to play light up this early, so slightly early playing is judged right.
 const EARLY_MS: f64 = 250.0;
+/// A hand whose next note is further away than this gets no preview (and
+/// the search stays cheap).
+const PREVIEW_HORIZON_MS: f64 = 10_000.0;
 /// Waiting this long on a chord makes its unpressed keys blink.
 const BLINK_AFTER_MS: f64 = 3000.0;
 /// Default hand reach in semitones (C3..E4, a tenth).
@@ -559,27 +562,28 @@ impl State {
         let ahead = if self.waiting { CHORD_MS as f64 + 1.0 } else { EARLY_MS };
         let lo = self.pos - song.max_dur as f64;
         let first = song.notes.partition_point(|n| (n.t as f64) < lo);
-        // Like the original's "future notes": in wait mode, the single next time
-        // slice after the notes to play now (both hands, however far ahead),
-        // except keys that are already lit.
-        let mut next_onset: Option<u32> = None;
+        // Wait mode previews the next note (or chord) of each hand on its own,
+        // so both hands show what's coming; keys that are already lit keep
+        // their hint. Index 0 = right hand, 1 = left.
+        let mut next_onset: [Option<u32>; 2] = [None, None];
         for i in first..song.notes.len() {
             let n = &song.notes[i];
             let t = n.t as f64;
-            if next_onset.is_some_and(|o| n.t > o + CHORD_MS) {
-                break;
-            }
             if self.ignored(n) {
                 continue;
             }
             let hand = if self.hand_of(n) == Hand::Right { HINT_RIGHT } else { HINT_LEFT };
             if t > self.pos + ahead {
-                if self.mode != Mode::Wait {
+                if self.mode != Mode::Wait || t > self.pos + PREVIEW_HORIZON_MS {
                     break;
                 }
-                next_onset.get_or_insert(n.t);
-                if h[n.key as usize] == 0 {
+                let onset = *next_onset[(hand == HINT_LEFT) as usize].get_or_insert(n.t);
+                if n.t <= onset + CHORD_MS && h[n.key as usize] == 0 {
                     h[n.key as usize] = hand | HINT_PREVIEW;
+                }
+                // Both hands have their next chord and we're past both: done.
+                if next_onset.iter().all(|o| o.is_some_and(|o| n.t > o + CHORD_MS)) {
+                    break;
                 }
                 continue;
             }
@@ -1041,10 +1045,11 @@ mod tests {
     }
 
     #[test]
-    fn preview_is_the_next_time_slice_only() {
-        // Right chord at 0 (72+76), then left 40 at 800, then right 74 at 1500.
+    fn preview_shows_the_next_chord_of_each_hand() {
+        // Right chord at 0 (72+76), left 40 at 800, right 74 at 1500, right 79 at 2500,
+        // left 43 at 3000.
         let p = player_with(
-            song(&[(0, 100, 72, 0), (10, 100, 76, 0), (800, 100, 40, 1), (1500, 100, 74, 0)]),
+            song(&[(0, 100, 72, 0), (10, 100, 76, 0), (800, 100, 40, 1), (1500, 100, 74, 0), (2500, 100, 79, 0), (3000, 100, 43, 1)]),
             Mode::Wait,
         );
         p.command(Command { hand: Some(Practise::Both), ..Default::default() }).unwrap();
@@ -1052,13 +1057,9 @@ mod tests {
         run_ms(&p, 2000, &[], &mut out); // waiting at the first chord
         let h = p.state.lock().unwrap().hints();
         assert_eq!((h[72], h[76]), (HINT_RIGHT | HINT_REQUIRED, HINT_RIGHT | HINT_REQUIRED), "keys to play now");
-        assert_eq!(h[40], HINT_LEFT | HINT_PREVIEW, "next slice, whichever hand");
-        assert_eq!(h[74], 0, "not the slice after it");
-        // Play the chord: now 40 is due and 74 becomes the preview.
-        run_ms(&p, 850, &[72, 76], &mut out);
-        let h = p.state.lock().unwrap().hints();
-        assert_eq!(h[40], HINT_LEFT | HINT_REQUIRED, "waiting for it now");
-        assert_eq!(h[74], HINT_RIGHT | HINT_PREVIEW);
+        assert_eq!(h[40], HINT_LEFT | HINT_PREVIEW, "left hand's next note");
+        assert_eq!(h[74], HINT_RIGHT | HINT_PREVIEW, "right hand's next note, not hidden by the left one");
+        assert_eq!((h[79], h[43]), (0, 0), "only the next one per hand");
         // Outside wait mode there is no preview.
         p.command(Command { mode: Some(Mode::Other), ..Default::default() }).unwrap();
         run_ms(&p, 10, &[72, 76], &mut out);

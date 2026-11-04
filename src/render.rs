@@ -23,7 +23,7 @@ const RESTRIKE_DIM: u8 = 64;
 /// ...for this long, then jumps back to full, so repeated notes separate.
 const RESTRIKE_GAP_US: u32 = 40_000;
 /// Level (of 255) of the faint preview of the next notes.
-const PREVIEW: u8 = 40;
+const PREVIEW_SHARE: u8 = 102; // ~40% of a "play now" hint
 /// Backlight turns off after this long with no keys pressed and no song playing.
 const SCREENSAVER_US: u64 = 120_000_000;
 /// Half period of the "you're taking long" blink (8 flashes per second).
@@ -152,7 +152,8 @@ impl Renderer {
         let mut active = notes.playing();
         // Hints must stand out against the backlight, whatever the brightness.
         let bl = self.backlight;
-        let hint_floor = bl.r.max(bl.g).max(bl.b).saturating_mul(2);
+        let bl_peak = peak(bl);
+        let hint_floor = bl_peak.saturating_mul(2);
         self.clock_us = self.clock_us.wrapping_add(dt_us);
         let blink_off = (self.clock_us / BLINK_HALF_US) % 2 == 1;
         let practice = notes.practice();
@@ -197,14 +198,16 @@ impl Renderer {
                 // Keys you play win; otherwise show the player's hint.
                 let hand = self.hand_color[((h & 3) as usize).saturating_sub(1).min(1)];
                 if h & HINT_PREVIEW != 0 {
-                    // Next notes: faint, a little above the backlight so it shows.
-                    let c = self.gamma.apply(hand.scale(PREVIEW));
-                    let floor = (hint_floor / 2).saturating_add(2);
-                    if c.r.max(c.g).max(c.b) < floor { hand.scale(floor) } else { c }
+                    // A share of the "play now" hint, so it follows the brightness
+                    // setting and keeps its hand colour, but always clearly above
+                    // the backlight and unlit LEDs.
+                    let c = self.gamma.apply(hand).scale(PREVIEW_SHARE);
+                    let floor = bl_peak.saturating_add(4).max(6);
+                    if peak(c) < floor { at_peak(hand, floor) } else { c }
                 } else {
                     let l = if h & HINT_BRIGHT != 0 { HINT_AUTO } else { 255 };
                     let c = self.gamma.apply(hand.scale(l));
-                    if c.r.max(c.g).max(c.b) < hint_floor { hand.scale(hint_floor) } else { c }
+                    if peak(c) < hint_floor { at_peak(hand, hint_floor) } else { c }
                 }
             } else {
                 Rgb::BLACK
@@ -225,9 +228,11 @@ impl Renderer {
         self.idle_us = if active { 0 } else { self.idle_us.saturating_add(dt_us) };
         if !self.backlight.is_black() && self.idle_us < SCREENSAVER_US {
             any = true; // a lit backlight means every frame has to go out
+            // Only on unlit LEDs: mixing it into notes and hints would wash out
+            // their (hand) colours.
             let bl = self.backlight;
-            for px in self.pixels.iter_mut() {
-                *px = px.max(bl);
+            for px in self.pixels.iter_mut().filter(|p| p.is_black()) {
+                *px = bl;
             }
         }
 
@@ -280,6 +285,18 @@ impl Renderer {
     pub fn pixels(&self) -> &[Rgb] {
         &self.pixels
     }
+}
+
+/// Brightest channel of a colour.
+fn peak(c: Rgb) -> u8 {
+    c.r.max(c.g).max(c.b)
+}
+
+/// `c` scaled so its brightest channel is `target`, keeping its hue.
+fn at_peak(c: Rgb, target: u8) -> Rgb {
+    let m = peak(c).max(1) as u16;
+    let ch = |v: u8| (v as u16 * target as u16 / m).min(255) as u8;
+    Rgb::new(ch(c.r), ch(c.g), ch(c.b))
 }
 
 /// Render loop. Runs at `fps`, but a note-on unparks the thread so a strike
@@ -509,6 +526,30 @@ mod tests {
     }
 
     #[test]
+    fn previews_stay_readable_at_low_brightness_over_a_backlight() {
+        // The settings on the Pi: brightness 36, cyan backlight at 15.
+        let mut r = renderer();
+        r.apply(&Settings {
+            brightness: 36,
+            backlight_color: "#00ffff".into(),
+            backlight_brightness: 15,
+            ..Settings::default()
+        });
+        let notes = NoteState::new();
+        notes.set_hint(60, crate::notes::HINT_RIGHT | HINT_PREVIEW);
+        notes.set_hint(62, crate::notes::HINT_LEFT | HINT_PREVIEW);
+        notes.set_hint(64, crate::notes::HINT_RIGHT);
+        r.update(&notes, Duration::ZERO);
+        let led = |n| r.pixels()[KeyMap::new(&Settings::default().geometry(176)).led_for(n).unwrap() as usize];
+        let (bl, right, left, now) = (Rgb::new(0, 15, 15), led(60), led(62), led(64));
+        assert_eq!(led(70), bl, "unlit keys show the backlight");
+        assert!(peak(right) > peak(bl) && peak(left) > peak(bl), "above the backlight: {right:?} {left:?}");
+        assert!(peak(right) < peak(now), "dimmer than a key to play: {right:?} vs {now:?}");
+        // Hand colours survive: right (#2f7cff) is blue-led, left (#ff8a1f) red-led.
+        assert!(right.b > right.r && left.r > left.b, "{right:?} {left:?}");
+    }
+
+    #[test]
     fn previews_are_faint_and_never_judged_right() {
         let mut r = renderer();
         r.hand_color = [Rgb::new(0, 0, 255), Rgb::new(0, 255, 0)];
@@ -517,7 +558,7 @@ mod tests {
         notes.set_hint(62, crate::notes::HINT_RIGHT);
         r.update(&notes, Duration::ZERO);
         let (preview, full) = (r.pixels()[80].b, r.pixels()[84].b);
-        assert!(preview > 0 && preview < full / 4, "faint next note: {preview} vs {full}");
+        assert!(preview > 0 && preview * 2 < full, "clearly dimmer than a key to play: {preview} vs {full}");
         // Pressing a key that's only previewed counts as wrong (red).
         notes.set_practice(true);
         notes.note_on(60, 127);
@@ -551,7 +592,7 @@ mod tests {
         notes.note_on(60, 127);
         r.update(&notes, Duration::ZERO);
         let key = r.pixels()[KeyMap::new(&Settings::default().geometry(176)).led_for(60).unwrap() as usize];
-        assert_eq!(key, Rgb::new(255, 15, 15));
+        assert_eq!(key, Rgb::new(255, 0, 0), "a lit key keeps its own colour");
     }
 
     #[test]

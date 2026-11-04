@@ -72,9 +72,10 @@ colour. While practising, a press turns **green** if it's a key the song
 expects and **red** if it isn't, both on the strip and on the tablet. The
 sustain pedal is ignored, so LEDs follow your keys only. Hints are
 always at least twice as bright as the backlight. In wait mode, the next
-notes after the ones to play now (one time slice, either hand, like the
-original's "future notes") glow faintly in their hand colour; a key that's
-only previewed doesn't count as "right" yet. Pausing clears the song from
+note or chord of each hand glows faintly in its hand colour (about 40% of a key
+to play, always above the backlight); a key that's only previewed doesn't
+count as "right" yet. The backlight only lights unlit keys, so hand colours
+stay readable. Pausing clears the song from
 the strip. The backlight turns
 off after 2 minutes with no key pressed and no song playing, and comes back
 on the next key press. A key struck again while
