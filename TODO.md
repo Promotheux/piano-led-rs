@@ -20,14 +20,19 @@ Prioritized: work top to bottom. Tick items off as they land.
 
 ## Phase 2: Practice features & learning engine
 
-- [ ] **Perfect pitch trainer mode**:
-  - Single note, chord quality and interval identification drills, answered on
-    the piano (MIDI input). Done in the Train tab: notes, intervals up to an
-    octave and the four triads, played back on the piano.
-  - Strict mode (blind test) or a reference drone / relative aid.
-  - Instant LED feedback: green for correct; red, with the right key revealed
+- [x] **Perfect pitch trainer mode** (Train tab):
+  - Note, interval (up to an octave) and triad drills, played back on the piano.
+  - Strict blind test, or a reference C4 before each question.
+  - Instant LED feedback: green for correct; red, with the right keys revealed
     in blue, for incorrect.
-  - Streak tracking, accuracy score and adaptive octave range.
+  - Streak, best, accuracy score and an auto range that grows with the streak.
+- [ ] **Improv mode**: the LEDs show which notes sound good right now, for
+      improvising with the right hand.
+  - Chords from you (left hand below a split point, recognised live) or from a
+    backing progression the piano plays (e.g. I–V–vi–IV, ii–V–I, 12-bar blues)
+    in a chosen key and tempo.
+  - Current chord's tones bright (safe to land on), the rest of the scale dim
+    (passing notes), everything else dark; or a pentatonic-only setting.
 - [ ] **Harmonic ear training & chord progressions**: the app prompts a Roman
       numeral progression (e.g. ii–V–I in G major) by sound or symbol; you play
       the chords in any voicing, and it scores the harmony (right chord

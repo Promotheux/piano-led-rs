@@ -890,7 +890,12 @@ function renderTrainer() {
   $('#tr-start').textContent = t.active ? 'Stop' : 'Start';
   $('#tr-replay').disabled = !t.active;
   setSeg('#tr-drill', t.drill);
-  setSeg('#tr-range', `${t.lo}-${t.hi}`);
+  setSeg('#tr-range', t.adaptive ? '' : `${t.lo}-${t.hi}`);
+  for (const [id, on] of [['#tr-ref', t.reference], ['#tr-auto', t.adaptive]]) {
+    $(id).classList.toggle('on', on);
+    $(id).setAttribute('aria-pressed', on);
+  }
+  $('#tr-rangenow').textContent = `Range ${fullName(t.lo)} – ${fullName(t.hi)}` + (t.adaptive ? ', grows with your streak' : '');
   $('#tr-streak').textContent = t.streak;
   $('#tr-best').textContent = t.best;
   $('#tr-score').textContent = t.total ? `${t.right}/${t.total} (${Math.round((100 * t.right) / t.total)}%)` : '–';
@@ -900,10 +905,12 @@ function renderTrainer() {
   note.className = 'tr-note' + (known ? (t.missed ? ' wrong' : ' right') : '');
   note.textContent = name;
   $('#tr-keys').textContent = keys;
-  $('#tr-prompt').textContent = !t.active ? TR_ASK[t.drill][0]
+  $('#tr-prompt').textContent = !t.active ? (t.reference ? 'First C4 as a reference. ' : '') + TR_ASK[t.drill][0]
     : !known ? TR_ASK[t.drill][1]
     : t.missed ? 'Not quite. Play the lit keys to go on.' : 'Right!';
 }
+$('#tr-ref').addEventListener('click', () => live && trainer({ reference: !live.trainer.reference }));
+$('#tr-auto').addEventListener('click', () => live && trainer({ adaptive: !live.trainer.adaptive }));
 $('#tr-drill').addEventListener('click', (e) => e.target.dataset.v && trainer({ drill: e.target.dataset.v }));
 $('#tr-start').addEventListener('click', () => live && trainer({ active: !live.trainer.active }));
 $('#tr-replay').addEventListener('click', () => trainer({ replay: true }));

@@ -119,6 +119,7 @@ dialog h3 { margin: 0 0 12px; }
 .tr-keys { margin: -10px 0 0; color: var(--muted); font-size: 20px; min-height: 1.2em; }
 .tr-note.wrong { color: #ff6b6b; }
 .trainer .row { display: flex; gap: 12px; }
+.btn.toggle.on { background: var(--panel-2); border-color: var(--accent); color: var(--text); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tr-stats { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 28px; margin: 0; }
 .tr-stats dt { color: var(--muted); grid-row: 1; }

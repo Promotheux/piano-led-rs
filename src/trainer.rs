@@ -22,6 +22,16 @@ const CHORD_MS: f64 = 1300.0;
 /// Pause after a right answer (or starting) before the next question.
 const NEXT_MS: f64 = 1200.0;
 const VELOCITY: u8 = 80;
+/// Reference mode: C4 first, held this long, the question this long after.
+const REF_KEY: u8 = 60;
+const REF_HOLD_MS: f64 = 700.0;
+const REF_MS: f64 = 1100.0;
+/// Auto range: starts at C4..B4, widens by a whole tone on each side every
+/// `GROW_EVERY` right answers in a row up to C2..C6, narrows by a semitone on
+/// each side after a miss.
+const BASE: (u8, u8) = (60, 71);
+const WIDEST: (u8, u8) = (36, 84);
+const GROW_EVERY: u32 = 5;
 /// Triads in root position, as semitones above the root: major, minor,
 /// diminished, augmented (the UI names them in this order).
 const CHORDS: [[u8; 3]; 4] = [[0, 4, 7], [0, 3, 7], [0, 3, 6], [0, 4, 8]];
@@ -48,6 +58,10 @@ pub struct Status {
     pub kind: u8,
     /// A wrong key was played for this question.
     pub missed: bool,
+    /// C4 is played before each question (relative pitch).
+    pub reference: bool,
+    /// The range follows your streak.
+    pub adaptive: bool,
     pub streak: u32,
     pub best: u32,
     pub right: u32,
@@ -61,8 +75,12 @@ pub struct Command {
     pub active: Option<bool>,
     /// Switching drills starts a fresh score.
     pub drill: Option<Drill>,
+    /// A range set by hand turns auto range off.
     pub lo: Option<u8>,
     pub hi: Option<u8>,
+    pub reference: Option<bool>,
+    /// Turning it on starts again from C4..B4.
+    pub adaptive: Option<bool>,
     /// Play the current question again.
     pub replay: bool,
     /// Zero the score.
@@ -84,6 +102,8 @@ struct State {
     missed: bool,
     /// Every key played; the next question follows after a pause.
     solved: bool,
+    reference: bool,
+    adaptive: bool,
     /// Time since the instrument started playing the question; `None` once
     /// it's done, negative to (re)start on the next tick.
     play_ms: Option<f64>,
@@ -120,6 +140,8 @@ impl Trainer {
                 hit: [false; 3],
                 missed: false,
                 solved: false,
+                reference: false,
+                adaptive: false,
                 play_ms: None,
                 next_ms: None,
                 sync: false,
@@ -142,9 +164,22 @@ impl Trainer {
         if c.drill.unwrap_or(s.drill) == Drill::Chord && hi - lo < 8 {
             return Err("chords need a range of at least 8 semitones".into());
         }
+        if c.lo.is_some() || c.hi.is_some() {
+            s.adaptive = false;
+        }
         if (lo, hi) != (s.lo, s.hi) {
             (s.lo, s.hi) = (lo, hi);
             s.skip(); // the current question may be outside the new range
+        }
+        if let Some(a) = c.adaptive {
+            if a && !s.adaptive {
+                (s.lo, s.hi) = BASE;
+                s.skip();
+            }
+            s.adaptive = a;
+        }
+        if let Some(r) = c.reference {
+            s.reference = r;
         }
         if let Some(d) = c.drill.filter(|&d| d != s.drill) {
             s.drill = d;
@@ -179,6 +214,8 @@ impl Trainer {
             shown: if shown { s.keys[..s.len].to_vec() } else { Vec::new() },
             kind: s.kind,
             missed: s.active && s.missed,
+            reference: s.reference,
+            adaptive: s.adaptive,
             streak: s.streak,
             best: s.best,
             right: s.right,
@@ -250,6 +287,10 @@ impl State {
                         self.total += 1;
                         self.streak += 1;
                         self.best = self.best.max(self.streak);
+                        if self.adaptive && self.streak % GROW_EVERY == 0 {
+                            self.lo = self.lo.saturating_sub(2).max(WIDEST.0);
+                            self.hi = (self.hi + 2).min(WIDEST.1);
+                        }
                     }
                     self.solved = true;
                     self.next_ms = Some(NEXT_MS);
@@ -259,6 +300,10 @@ impl State {
                 self.missed = true;
                 self.total += 1;
                 self.streak = 0;
+                if self.adaptive {
+                    self.lo = (self.lo + 1).min(BASE.0);
+                    self.hi = (self.hi - 1).max(BASE.1);
+                }
             }
             None => {}
         }
@@ -320,8 +365,17 @@ impl State {
             Drill::Chord => (3, 0.0, CHORD_MS),
         };
         let now = |x: f64| t <= x && x < t + dt;
+        let start = if self.reference { REF_MS } else { 0.0 };
+        if self.reference {
+            if now(0.0) {
+                out([0x90, REF_KEY, VELOCITY]);
+            }
+            if now(REF_HOLD_MS) {
+                out([0x80, REF_KEY, 0]);
+            }
+        }
         for (i, &k) in self.keys[..len].iter().enumerate() {
-            let on = i as f64 * gap;
+            let on = start + i as f64 * gap;
             if now(on) {
                 out([0x90, k, VELOCITY]);
             }
@@ -329,13 +383,16 @@ impl State {
                 out([0x80, k, 0]);
             }
         }
-        let end = (len - 1) as f64 * gap + hold;
+        let end = start + (len - 1) as f64 * gap + hold;
         self.play_ms = if t + dt > end { None } else { Some(t + dt) };
     }
 
     fn silence(&self, out: &mut impl FnMut([u8; 3])) {
         for &k in &self.keys[..self.len] {
             out([0x80, k, 0]);
+        }
+        if self.reference {
+            out([0x80, REF_KEY, 0]);
         }
     }
 
@@ -486,6 +543,46 @@ mod tests {
         t.command(Command { drill: Some(Drill::Chord), ..Default::default() }).unwrap();
         assert!(t.status().shown.is_empty());
         assert_eq!(t.status().total, 0, "a new drill starts a fresh score");
+    }
+
+    #[test]
+    fn reference_mode_plays_c4_first() {
+        let t = start(Drill::Note);
+        t.command(Command { reference: Some(true), ..Default::default() }).unwrap();
+        let mut out = vec![];
+        run(&t, 1250, &[0; 128], &mut out);
+        assert_eq!(out, vec![[0x90, REF_KEY, VELOCITY]], "only the reference so far");
+        run(&t, REF_MS as u32, &[0; 128], &mut out);
+        let k = keys(&t)[0];
+        assert_eq!(out, vec![[0x90, REF_KEY, VELOCITY], [0x80, REF_KEY, 0], [0x90, k, VELOCITY]]);
+        assert!(t.status().reference);
+    }
+
+    #[test]
+    fn auto_range_grows_with_the_streak_and_shrinks_on_a_miss() {
+        let t = start(Drill::Note);
+        t.command(Command { lo: Some(40), hi: Some(80), ..Default::default() }).unwrap();
+        t.command(Command { adaptive: Some(true), ..Default::default() }).unwrap();
+        let range = |t: &Trainer| (t.status().lo, t.status().hi);
+        assert_eq!(range(&t), BASE, "starts from one octave");
+        let mut out = vec![];
+        let mut p = [0u8; 128];
+        for i in 1..=10 {
+            run(&t, 1300, &p, &mut out);
+            p[keys(&t)[0] as usize] += 1;
+            run(&t, 10, &p, &mut out);
+            let grown = (i / GROW_EVERY) as u8 * 2;
+            assert_eq!(range(&t), (BASE.0 - grown, BASE.1 + grown), "after {i} right");
+        }
+        // A miss narrows it by a semitone on each side.
+        run(&t, 1300, &p, &mut out);
+        let k = keys(&t)[0];
+        p[if k == 60 { 61 } else { 60 }] += 1;
+        run(&t, 10, &p, &mut out);
+        assert_eq!(range(&t), (BASE.0 - 3, BASE.1 + 3));
+        // Setting a range by hand turns it off.
+        t.command(Command { lo: Some(48), hi: Some(71), ..Default::default() }).unwrap();
+        assert!(!t.status().adaptive);
     }
 
     #[test]
