@@ -22,7 +22,8 @@ Prioritized: work top to bottom. Tick items off as they land.
 
 - [ ] **Perfect pitch trainer mode**:
   - Single note, chord quality and interval identification drills, answered on
-    the piano (MIDI input). Single notes done (Train tab); intervals and chords next.
+    the piano (MIDI input). Done in the Train tab: notes, intervals up to an
+    octave and the four triads, played back on the piano.
   - Strict mode (blind test) or a reference drone / relative aid.
   - Instant LED feedback: green for correct; red, with the right key revealed
     in blue, for incorrect.

@@ -85,8 +85,14 @@
 
   <section id="trainer" class="view">
     <div class="trainer">
+      <div class="seg" id="tr-drill" aria-label="Drill">
+        <button data-v="note">Notes</button>
+        <button data-v="interval">Intervals</button>
+        <button data-v="chord">Chords</button>
+      </div>
       <p id="tr-prompt" class="tr-prompt">The piano plays a note. Find it on the keyboard.</p>
       <p id="tr-note" class="tr-note" aria-live="polite">&nbsp;</p>
+      <p id="tr-keys" class="tr-keys"></p>
       <div class="row">
         <button id="tr-start" class="btn primary">Start</button>
         <button id="tr-replay" class="btn" disabled>Play again</button>

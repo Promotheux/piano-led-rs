@@ -114,8 +114,9 @@ dialog h3 { margin: 0 0 12px; }
 /* pitch trainer */
 .trainer { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; max-width: 560px; }
 .tr-prompt { color: var(--muted); margin: 0; font-size: 18px; }
-.tr-note { margin: 0; font-size: 64px; font-weight: 700; min-height: 1.2em; }
+.tr-note { margin: 0; font-size: 56px; font-weight: 700; min-height: 1.2em; }
 .tr-note.right { color: var(--ok); }
+.tr-keys { margin: -10px 0 0; color: var(--muted); font-size: 20px; min-height: 1.2em; }
 .tr-note.wrong { color: #ff6b6b; }
 .trainer .row { display: flex; gap: 12px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
