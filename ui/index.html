@@ -93,6 +93,21 @@
           <dt>LED frame rate</dt><dd id="h-fps">–</dd>
           <dt>Tablets connected</dt><dd id="h-ws">–</dd>
         </dl>
+        <div class="inline">
+          <button type="button" class="btn" id="restartplv">Restart plv</button>
+          <button type="button" class="btn" id="rebootpi">Reboot Pi</button>
+        </div>
+      </fieldset>
+      <fieldset class="card">
+        <legend>Wi-Fi</legend>
+        <div>Connected to: <b id="wifinow">…</b></div>
+        <button type="button" class="btn" id="wifiscan">Scan for networks</button>
+        <ul id="wifilist" class="wifilist"></ul>
+        <label>Network name <input id="wifissid" type="text" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label>Password <input id="wifipass" type="password" maxlength="63" autocomplete="new-password">
+          <small>Leave empty for an open network.</small></label>
+        <button type="button" class="btn" id="wificonnect">Connect the Pi</button>
+        <small id="wifistatus"></small>
       </fieldset>
       <fieldset class="card">
         <legend>Look</legend>

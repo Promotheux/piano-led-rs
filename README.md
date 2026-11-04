@@ -125,6 +125,11 @@ the falling notes from a 20 Hz state stream, smoothed locally.
 | GET/POST | `/api/player` | status / `{song?, playing?, mode?, hand?, tempo?, seek?, loop_ab?, track_hands?, reach?}` |
 | GET | `/api/player/song` | loaded song: tracks + notes `[t, dur, key, hand, out_of_reach]` |
 | GET | `/ws` | WebSocket: player status + held keys, 20×/s |
+| GET | `/api/health` | MIDI in/out, LED frame rate, open tablets |
+| GET | `/api/wifi` | scan: `{networks: [{ssid, signal, secure, active}]}` |
+| GET | `/api/wifi/current` | `{ssid, hotspot}` without scanning |
+| POST | `/api/wifi` | `{ssid, password}`: answers 202, then switches networks |
+| POST | `/api/system/restart`, `/api/system/reboot` | answers 202, then restarts plv / reboots the Pi |
 
 There's no authentication, the same as the original: keep it on your home network.
 

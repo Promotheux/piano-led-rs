@@ -300,6 +300,7 @@ function readForm() {
 }
 let saveTimer;
 form.addEventListener('input', (e) => {
+  if (!e.target.name) return; // not a setting (e.g. the Wi-Fi fields)
   if (e.target.name === 'colormode') form.color.disabled = form.colormode.value === 'rainbow';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, e.target.type === 'range' ? 150 : 600);
@@ -317,6 +318,73 @@ async function save() {
     toast(e.message, true);
   }
 }
+
+// ---------- restart / reboot ----------
+for (const [id, path, question, done] of [
+  ['#restartplv', '/api/system/restart', 'Restart plv? The LEDs and this page pause for a few seconds.', 'Restarting plv…'],
+  ['#rebootpi', '/api/system/reboot', 'Reboot the Raspberry Pi? It takes about a minute to come back.', 'Rebooting the Pi… this page reconnects by itself.'],
+]) {
+  $(id).addEventListener('click', async () => {
+    if (!confirm(question)) return;
+    try {
+      await post(path, {});
+      toast(done);
+    } catch (e) {
+      toast(e.message, true);
+    }
+  });
+}
+
+// ---------- Wi-Fi ----------
+async function loadWifiCurrent() {
+  try {
+    const c = await api('/api/wifi/current');
+    $('#wifinow').textContent = !c.ssid ? 'no network' : c.hotspot ? `its own hotspot (${c.ssid})` : c.ssid;
+  } catch {
+    $('#wifinow').textContent = 'unknown';
+  }
+}
+async function scanWifi() {
+  loadWifiCurrent();
+  const list = $('#wifilist');
+  list.innerHTML = '<li class="muted">Scanning…</li>';
+  try {
+    const { networks } = await api('/api/wifi');
+    list.innerHTML = networks.length
+      ? ''
+      : '<li class="muted">No networks found. On its own hotspot the Pi often can\'t scan: type the name below.</li>';
+    for (const n of networks) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${escapeHtml(n.ssid)}${n.active ? ' ✓' : ''}</span><span class="meta">${n.signal}%${n.secure ? ' 🔒' : ''}</span>`;
+      li.addEventListener('click', () => {
+        $('#wifissid').value = n.ssid;
+        $('#wifipass').focus();
+      });
+      list.append(li);
+    }
+  } catch (e) {
+    list.innerHTML = '';
+    toast(e.message, true);
+  }
+}
+$('#wifiscan').addEventListener('click', scanWifi);
+loadWifiCurrent();
+$('#wificonnect').addEventListener('click', async () => {
+  const ssid = $('#wifissid').value.trim();
+  const password = $('#wifipass').value;
+  if (!ssid) return toast('Pick or type a network name', true);
+  if (!confirm(`Switch the Pi to "${ssid}"? This page loses its connection while the Pi switches.`)) return;
+  try {
+    await post('/api/wifi', { ssid, password });
+    $('#wifipass').value = '';
+    $('#wifistatus').textContent =
+      `Switching to "${ssid}". Join that network with this tablet too, then find the Pi in your router ` +
+      `(it's called pianoledvisualizer) or try http://pianoledvisualizer.local/. ` +
+      `If the password was wrong, the PianoLED-Setup hotspot comes back within a minute.`;
+  } catch (e) {
+    toast(e.message, true);
+  }
+});
 
 // ---------- falling notes ----------
 const canvas = $('#roll');

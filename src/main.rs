@@ -19,6 +19,7 @@ mod render;
 mod settings;
 mod tls;
 mod web;
+mod wifi;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

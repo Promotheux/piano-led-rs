@@ -20,6 +20,7 @@ use crate::midi;
 use crate::notes::NoteState;
 use crate::player::{self, Command, Player, Status};
 use crate::settings::{Settings, SettingsStore};
+use crate::wifi;
 
 const MAX_UPLOAD: u64 = 1 << 20;
 const MAX_JSON: u64 = 64 * 1024;
@@ -100,6 +101,17 @@ fn handle(app: &Arc<App>, mut req: Request) {
             Err(e) => error(500, &e),
         },
         (Method::Get, "/api/health") => json(&app.health.snapshot()),
+        (Method::Get, "/api/wifi") => match wifi::scan() {
+            Ok(networks) => json(&serde_json::json!({ "networks": networks })),
+            Err(e) => error(500, &e),
+        },
+        (Method::Post, "/api/wifi") => post_wifi(&mut req),
+        (Method::Post, "/api/system/restart") => system(&["restart", "plv.service"], "restarting"),
+        (Method::Post, "/api/system/reboot") => system(&["reboot"], "rebooting"),
+        (Method::Get, "/api/wifi/current") => match wifi::current() {
+            Ok(c) => json(&c),
+            Err(e) => error(500, &e),
+        },
         (Method::Get, "/api/player") => json(&app.player.status()),
         (Method::Post, "/api/player") => post_player(app, &mut req),
         (Method::Get, "/api/player/song") => match app.player.song_json() {
@@ -161,6 +173,51 @@ struct PlayerRequest {
     song: Option<String>,
     #[serde(flatten)]
     cmd: Command,
+}
+
+/// Runs a fixed `systemctl` command after answering, since restarting or
+/// rebooting ends this process. plv runs as root (see systemd/plv.service).
+fn system(args: &'static [&'static str], what: &str) -> Resp {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(1)); // let the response reach the tablet
+        eprintln!("web: systemctl {}", args.join(" "));
+        if let Err(e) = std::process::Command::new("systemctl").args(args).status() {
+            eprintln!("web: systemctl failed: {e}");
+        }
+    });
+    json(&serde_json::json!({ "status": what })).with_status_code(StatusCode(202))
+}
+
+#[derive(Deserialize)]
+struct WifiRequest {
+    ssid: String,
+    #[serde(default)]
+    password: String,
+}
+
+/// Answers first, then switches: changing networks cuts this connection
+/// (on the hotspot the tablet is on the network being taken down).
+fn post_wifi(req: &mut Request) -> Resp {
+    let body = match read_body(req, MAX_JSON) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let r: WifiRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return error(400, &e.to_string()),
+    };
+    if let Err(e) = wifi::validate(&r.ssid, &r.password) {
+        return error(400, &e);
+    }
+    let ssid = r.ssid.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(1)); // let the response reach the tablet
+        match wifi::connect(&r.ssid, &r.password) {
+            Ok(()) => eprintln!("wifi: connected to '{}'", r.ssid),
+            Err(e) => eprintln!("wifi: '{}' failed: {e}", r.ssid),
+        }
+    });
+    json(&serde_json::json!({ "switching": ssid })).with_status_code(StatusCode(202))
 }
 
 fn post_player(app: &App, req: &mut Request) -> Resp {
