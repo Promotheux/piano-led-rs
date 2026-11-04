@@ -19,6 +19,7 @@ use crate::health::{self, Health};
 use crate::midi;
 use crate::notes::NoteState;
 use crate::player::{self, Command, Player, Status};
+use crate::trainer::{self, Trainer};
 use crate::settings::{Settings, SettingsStore};
 use crate::wifi;
 
@@ -41,6 +42,7 @@ pub struct App {
     pub notes: Arc<NoteState>,
     pub settings: Arc<SettingsStore>,
     pub player: Arc<Player>,
+    pub trainer: Arc<Trainer>,
     pub health: Arc<Health>,
     pub songs_dir: PathBuf,
     /// Local CA certificate (DER) to install on tablets, when HTTPS is on.
@@ -113,6 +115,8 @@ fn handle(app: &Arc<App>, mut req: Request) {
             Err(e) => error(500, &e),
         },
         (Method::Get, "/api/player") => json(&app.player.status()),
+        (Method::Get, "/api/trainer") => json(&app.trainer.status()),
+        (Method::Post, "/api/trainer") => post_trainer(app, &mut req),
         (Method::Post, "/api/player") => post_player(app, &mut req),
         (Method::Get, "/api/player/song") => match app.player.song_json() {
             Some(s) => Response::from_string(s).with_header(header("Content-Type", "application/json")),
@@ -239,8 +243,30 @@ fn post_player(app: &App, req: &mut Request) -> Resp {
         };
         app.player.load(name, song);
     }
+    // Starting a song ends the pitch trainer: they share the instrument.
+    if r.cmd.playing == Some(true) {
+        let _ = app.trainer.command(trainer::Command { active: Some(false), ..Default::default() });
+    }
     match app.player.command(r.cmd) {
         Ok(()) => json(&app.player.status()),
+        Err(e) => error(400, &e),
+    }
+}
+
+fn post_trainer(app: &App, req: &mut Request) -> Resp {
+    let body = match read_body(req, MAX_JSON) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let c: trainer::Command = match serde_json::from_slice(&body) {
+        Ok(c) => c,
+        Err(e) => return error(400, &e.to_string()),
+    };
+    if c.active == Some(true) {
+        let _ = app.player.command(Command { playing: Some(false), ..Default::default() });
+    }
+    match app.trainer.command(c) {
+        Ok(()) => json(&app.trainer.status()),
         Err(e) => error(400, &e),
     }
 }
@@ -365,6 +391,7 @@ struct Live {
     #[serde(flatten)]
     status: Status,
     held: Vec<u8>,
+    trainer: trainer::Status,
     /// Bumps on every settings change, so open tablets reload them.
     settings_gen: u32,
     health: health::Snapshot,
@@ -394,6 +421,7 @@ fn websocket(app: &Arc<App>, req: Request) {
                 let live = Live {
                     status: app.player.status(),
                     held: (0u8..128).filter(|&k| app.notes.held(k as usize) != 0).collect(),
+                    trainer: app.trainer.status(),
                     settings_gen: app.settings.generation(),
                     health: app.health.snapshot(),
                 };

@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::midi::MidiOut;
 use crate::rtpmidi::RtpOut;
+use crate::trainer::Trainer;
 use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_REQUIRED, HINT_RIGHT};
 
 /// Notes starting within this window count as one chord in wait mode.
@@ -777,6 +778,7 @@ pub fn run(
     notes: Arc<NoteState>,
     out: Arc<Mutex<Option<MidiOut>>>,
     rtp: Option<Arc<RtpOut>>,
+    trainer: Arc<Trainer>,
     running: Arc<AtomicBool>,
 ) {
     let mut last = Instant::now();
@@ -800,9 +802,20 @@ pub fn run(
                 }
             };
             s.tick(dt, |k| notes.presses(k as usize), &mut send);
-            notes.set_practice(s.playing && s.song.is_some() && s.mode != Mode::Listen);
-            notes.set_playing(s.playing);
-            (s.hints(), s.playing)
+            // The pitch trainer shares the instrument and the LEDs; while it's
+            // on, the song is paused (see web.rs) and its hints win.
+            match trainer.tick(dt, |k| notes.presses(k as usize), &mut send) {
+                Some(h) => {
+                    notes.set_practice(true);
+                    notes.set_playing(true);
+                    (h, true)
+                }
+                None => {
+                    notes.set_practice(s.playing && s.song.is_some() && s.mode != Mode::Listen);
+                    notes.set_playing(s.playing);
+                    (s.hints(), s.playing)
+                }
+            }
         };
         for (k, (&new, old)) in hints.iter().zip(shown.iter_mut()).enumerate() {
             if new != *old {

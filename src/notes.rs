@@ -30,6 +30,9 @@ pub const HINT_PREVIEW: u8 = 16;
 /// Wait mode: this key of the current chord still needs a fresh press, so
 /// the hint shows even while the key is held from an earlier step.
 pub const HINT_REQUIRED: u8 = 32;
+/// Pitch trainer: the key to find. Judged like a hint (green when played)
+/// but not drawn, so it doesn't give the answer away.
+pub const HINT_HIDDEN: u8 = 64;
 
 pub struct NoteState {
     held: [AtomicU8; 128],

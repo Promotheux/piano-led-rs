@@ -18,6 +18,7 @@ mod player;
 mod render;
 mod rtpmidi;
 mod settings;
+mod trainer;
 mod tls;
 mod web;
 mod wifi;
@@ -93,6 +94,7 @@ fn main() {
     let render_handle = render_thread.thread().clone();
 
     let player = Arc::new(Player::new());
+    let trainer = Arc::new(trainer::Trainer::new());
     let _ = player.command(player::Command { reach: Some(initial.hand_reach), ..Default::default() });
     let midi_out: Arc<Mutex<Option<MidiOut>>> = Arc::new(Mutex::new(None));
     // Network MIDI from a PC, alongside USB. A taken port (rtpmidid) is logged, not fatal.
@@ -114,12 +116,12 @@ fn main() {
     };
 
     let player_thread = {
-        let (p, n, o, r) = (player.clone(), notes.clone(), midi_out.clone(), running.clone());
+        let (p, n, o, r, t) = (player.clone(), notes.clone(), midi_out.clone(), running.clone(), trainer.clone());
         let rtp = rtp_out.clone();
         std::thread::Builder::new()
             .name("plv-player".into())
             .stack_size(128 * 1024)
-            .spawn(move || player::run(p, n, o, rtp, r))
+            .spawn(move || player::run(p, n, o, rtp, t, r))
             .unwrap_or_else(|e| fatal(&format!("spawn player thread: {e}")))
     };
 
@@ -132,6 +134,7 @@ fn main() {
         notes: notes.clone(),
         settings: store.clone(),
         player: player.clone(),
+        trainer,
         health: health.clone(),
         songs_dir: cfg.songs_dir.clone(),
         ca_der: tls.as_ref().map(|t| t.ca_der.clone()),

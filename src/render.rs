@@ -11,7 +11,7 @@ use crate::color::{GammaLut, Rgb};
 use crate::hal::LedDriver;
 use crate::health::Health;
 use crate::keymap::KeyMap;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_PREVIEW, HINT_REQUIRED};
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_HIDDEN, HINT_PREVIEW, HINT_REQUIRED};
 use crate::settings::{Settings, SettingsStore};
 
 /// Envelope level is 8.8 fixed point: 0..=MAX_LEVEL.
@@ -192,7 +192,7 @@ impl Renderer {
             let c = if lvl != 0 && h & HINT_REQUIRED == 0 {
                 let base = self.feedback[n].unwrap_or(self.note_color[n]);
                 self.gamma.apply(base.scale(lvl))
-            } else if h & HINT_BLINK != 0 && blink_off {
+            } else if h & HINT_HIDDEN != 0 || (h & HINT_BLINK != 0 && blink_off) {
                 Rgb::BLACK
             } else if h != 0 {
                 // Keys you play win; otherwise show the player's hint.

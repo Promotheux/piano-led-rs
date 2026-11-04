@@ -98,6 +98,7 @@ function renderHealth() {
 setInterval(renderHealth, 1000);
 
 function onLive() {
+  renderTrainer();
   // Another tablet (or this one) changed settings: reload them.
   if (settingsGen !== null && live.settings_gen !== settingsGen && !saveTimer) loadSettings();
   settingsGen = live.settings_gen;
@@ -831,6 +832,38 @@ $('#httpslink').textContent = $('#httpslink').href;
 $('#installstate').textContent = window.isSecureContext
   ? 'This page is secure, so Chrome can install it (menu → Install app).'
   : 'This page is plain http, so Chrome can only make a shortcut. Follow the steps below.';
+
+// ---------- pitch trainer ----------
+// The Pi plays a note and judges the answer; the tablet shows the score.
+const trainer = (cmd) => post('/api/trainer', cmd).catch((e) => toast(e.message, true));
+const fullName = (key) => noteName(key) + (Math.floor(key / 12) - 1);
+function renderTrainer() {
+  const t = live.trainer;
+  if (!t) return;
+  $('#tr-start').textContent = t.active ? 'Stop' : 'Start';
+  $('#tr-replay').disabled = !t.active;
+  setSeg('#tr-range', `${t.lo}-${t.hi}`);
+  $('#tr-streak').textContent = t.streak;
+  $('#tr-best').textContent = t.best;
+  $('#tr-score').textContent = t.total ? `${t.right}/${t.total} (${Math.round((100 * t.right) / t.total)}%)` : '–';
+  const note = $('#tr-note');
+  note.className = 'tr-note' + (t.shown === null ? '' : t.missed ? ' wrong' : ' right');
+  if (!t.active) note.innerHTML = '&nbsp;';
+  else note.textContent = t.shown === null ? '?' : fullName(t.shown);
+  $('#tr-prompt').textContent = !t.active
+    ? 'The piano plays a note. Find it on the keyboard.'
+    : t.shown === null ? 'Which note was that? Play it.'
+    : t.missed ? 'Not quite. Play the lit key to go on.' : 'Right!';
+}
+$('#tr-start').addEventListener('click', () => live && trainer({ active: !live.trainer.active }));
+$('#tr-replay').addEventListener('click', () => trainer({ replay: true }));
+$('#tr-reset').addEventListener('click', () => trainer({ reset: true }));
+$('#tr-range').addEventListener('click', (e) => {
+  const v = e.target.dataset.v;
+  if (!v) return;
+  const [lo, hi] = v.split('-').map(Number);
+  trainer({ lo, hi });
+});
 
 // ---------- start ----------
 resize();

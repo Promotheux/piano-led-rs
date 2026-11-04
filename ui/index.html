@@ -20,6 +20,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-view="library" role="tab">Library</button>
     <button class="tab" data-view="player" role="tab">Play</button>
+    <button class="tab" data-view="trainer" role="tab">Train</button>
     <button class="tab" data-view="settings" role="tab">Settings</button>
   </nav>
   <div class="topright">
@@ -80,6 +81,29 @@
       <div id="tracklist"></div>
       <form method="dialog"><button class="btn">Done</button></form>
     </dialog>
+  </section>
+
+  <section id="trainer" class="view">
+    <div class="trainer">
+      <p id="tr-prompt" class="tr-prompt">The piano plays a note. Find it on the keyboard.</p>
+      <p id="tr-note" class="tr-note" aria-live="polite">&nbsp;</p>
+      <div class="row">
+        <button id="tr-start" class="btn primary">Start</button>
+        <button id="tr-replay" class="btn" disabled>Play again</button>
+      </div>
+      <div class="seg" id="tr-range" aria-label="Range">
+        <button data-v="60-71">C4–B4</button>
+        <button data-v="48-71">C3–B4</button>
+        <button data-v="48-83">C3–B5</button>
+        <button data-v="36-84">C2–C6</button>
+      </div>
+      <dl class="tr-stats">
+        <dt>Streak</dt><dd id="tr-streak">0</dd>
+        <dt>Best</dt><dd id="tr-best">0</dd>
+        <dt>Right</dt><dd id="tr-score">–</dd>
+      </dl>
+      <button id="tr-reset" class="btn ghost">Reset score</button>
+    </div>
   </section>
 
   <section id="settings" class="view">
