@@ -249,16 +249,29 @@ sudo ./build_image.sh 2024-11-19-raspios-bookworm-armhf-lite.img.xz
 On Windows or macOS, run it in the build image from "Build":
 
 ```bash
-docker run --rm --privileged -v "$PWD:/src" -w /src plv-armv7 ./build_image.sh 2024-11-19-raspios-bookworm-armhf-lite.img.xz
+docker run --rm -it --privileged -v "$PWD:/src" -w /src -e SSH_KEY="$(cat ~/.ssh/id_ed25519.pub)" -e WIFI_COUNTRY=NL plv-armv7 ./build_image.sh 2024-11-19-raspios-bookworm-armhf-lite.img.xz
 ```
 
 The result (`plv-<date>.img`) has the binary, the enabled `plv` service, the
 fallback hotspot (its password is printed and saved as
 `plv-<date>.img.hotspot-password.txt`), Wi-Fi power save off for every
 network, an empty song library (or `SONGS_DIR=…` to preload songs) and
-`plv-install.sh` for re-provisioning later. Flash it with Raspberry Pi Imager
-(*Use custom*) and set user, Wi-Fi and SSH in Imager's settings. Everything is
-copied in as files, so no ARM emulation is needed.
+`plv-install.sh` for re-provisioning later. Everything is copied in as files,
+so no ARM emulation is needed.
+
+Raspberry Pi Imager can't customise a custom image, so the script writes the
+first-boot setup (cloud-init `user-data`) itself. Set it with environment
+variables:
+
+| Variable | Default | |
+|---|---|---|
+| `SSH_KEY` | none | Public key for SSH. Without it you can't log in (the app still works). |
+| `PI_USER`, `PI_HOSTNAME` | `plv`, `pianoledvisualizer` | |
+| `WIFI_COUNTRY` | `GB` | Wi-Fi stays off until a country is set. |
+| `WIFI_SSID`, `WIFI_PASSWORD` | none | Home network. Without it, join the hotspot and pick one in the app. |
+| `STATUS_LOG` | off | `1`: the Pi writes its network and service status to `plv-status.txt` on the boot partition every 2 minutes, readable on any PC. For troubleshooting a Pi you can't reach. |
+
+Then flash it with Raspberry Pi Imager (*Use custom*) and skip customisation.
 
 ## Run by hand
 

@@ -10,3 +10,6 @@
 /server.key
 /server.crt
 /server.names
+
+# Base and built Raspberry Pi OS images (build_image.sh).
+/images

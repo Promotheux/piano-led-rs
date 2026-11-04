@@ -1,7 +1,11 @@
 #!/bin/sh
 # On its fallback hotspot the Pi can't see whether home Wi-Fi is back. If
 # nobody is connected to the hotspot, step down so NetworkManager tries the
-# known networks again (it brings the hotspot back if none is in range).
+# known networks again, and bring the hotspot back if none of them connects
+# (NetworkManager won't auto-restart a connection taken down by hand).
 nmcli -t -f NAME connection show --active | grep -qx PianoLED-Setup || exit 0
-[ "$(/sbin/iw dev wlan0 station dump | grep -c '^Station')" -eq 0 ] && nmcli connection down PianoLED-Setup
+[ "$(/sbin/iw dev wlan0 station dump | grep -c '^Station')" -eq 0 ] || exit 0
+nmcli connection down PianoLED-Setup
+sleep 45
+nmcli -t -g GENERAL.STATE device show wlan0 | grep -q '^100' || nmcli connection up PianoLED-Setup
 exit 0
