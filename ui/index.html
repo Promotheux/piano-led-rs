@@ -92,6 +92,7 @@
           <dt>MIDI out</dt><dd id="h-out">–</dd>
           <dt>LED frame rate</dt><dd id="h-fps">–</dd>
           <dt>Tablets connected</dt><dd id="h-ws">–</dd>
+          <dt>Network MIDI</dt><dd id="h-rtp">–</dd>
         </dl>
         <div class="inline">
           <button type="button" class="btn" id="restartplv">Restart plv</button>
@@ -130,7 +131,8 @@
         <label class="check"><input name="note_names" type="checkbox"> Show note names</label>
         <label>Hand reach (semitones) <input name="hand_reach" type="number" min="0" max="48">
           <small id="reachhelp">16 = C3 to E4. Wider chords: the piano plays the notes you can't reach. 0 = off.</small></label>
-        <label>MIDI port <select name="midi_port"></select></label>
+        <label>MIDI port (USB) <select name="midi_port"></select>
+          <small>Network MIDI (RTP-MIDI, "Piano LED") is always on as well; connected computers show under Connection.</small></label>
       </fieldset>
       <fieldset class="card">
         <legend>Install as app (Android)</legend>

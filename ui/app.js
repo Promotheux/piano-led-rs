@@ -85,9 +85,12 @@ function renderHealth() {
   };
   set('#h-link', !wsOpen ? 'Reconnecting…' : stale ? `No data for ${Math.round(age)} s` : 'Live', stale);
   set('#h-in', h ? h.midi_in || 'No keyboard found' : '–', h && !h.midi_in);
-  set('#h-out', h ? h.midi_out || 'None' : '–', h && !h.midi_out);
+  const netOut = h && h.rtp_peers && h.rtp_peers.length ? `network: ${h.rtp_peers.join(', ')}` : '';
+  const outs = h ? [h.midi_out, netOut].filter(Boolean).join(' + ') : '';
+  set('#h-out', h ? outs || 'None' : '–', h && !outs);
   set('#h-fps', h ? `${h.led_fps} fps` : '–', h && !h.led_fps);
   set('#h-ws', h ? String(h.ws_clients) : '–');
+  set('#h-rtp', h ? (h.rtp_peers && h.rtp_peers.length ? h.rtp_peers.join(', ') : 'No computer connected') : '–');
   const problem = stale ? 'No connection to the Pi' : !h.midi_in ? 'No keyboard connected' : !h.led_fps ? 'LEDs stalled' : '';
   $('#conn').classList.toggle('on', !problem);
   $('#conn').title = problem || 'Connected';
@@ -783,7 +786,9 @@ function drawKeyboard(active, expected) {
       const h = pass ? keyH * 0.62 : keyH;
       let fill = pass ? '#11141b' : '#e9ecf3';
       if (active.has(n)) fill = shade(handColor(active.get(n)), pass ? 0.75 : 0.55);
-      if (held.has(n)) fill = !practising || expected.has(n) ? '#3ddc97' : '#ff5a5a';
+      // Wait mode: a key held over from an earlier chord stays "to play" until it's pressed again.
+      const required = live && live.waiting && expected.has(n) && !(live.done || []).includes(n);
+      if (held.has(n) && !required) fill = !practising || expected.has(n) ? '#3ddc97' : '#ff5a5a';
       ctx.fillStyle = fill;
       ctx.fillRect(k.x + (pass ? 0 : 0.5), keyTop, k.w - (pass ? 0 : 1), h);
       // Note names on the keys to play now.

@@ -57,6 +57,8 @@ pub struct Config {
     pub settings_path: Option<PathBuf>,
     /// HTTPS listen address (needed to install the app on Android); `None` disables it.
     pub https: Option<String>,
+    /// RTP-MIDI (network MIDI) session port; data uses the next one. `None` = off.
+    pub rtpmidi: Option<u16>,
     /// Tablet view: `waterfall` (falling notes) or `sheet` (staff notation).
     pub view_mode: String,
 }
@@ -80,6 +82,7 @@ impl Default for Config {
             demo: false,
             http: Some("0.0.0.0:8080".into()),
             https: Some("0.0.0.0:8443".into()),
+            rtpmidi: Some(5004),
             songs_dir: PathBuf::from("songs"),
             settings_path: Some(PathBuf::from("settings.json")),
             view_mode: "waterfall".into(),
@@ -123,6 +126,7 @@ I/O:
 App:
   --http <ADDR|off>       web UI address                      [0.0.0.0:8080]
   --https <ADDR|off>      web UI over HTTPS (installable app) [0.0.0.0:8443]
+  --rtpmidi <PORT|off>    network MIDI (RTP-MIDI) session port [5004]
   --songs <DIR>           folder with .mid files              [songs]
   --settings <FILE|off>   saved UI settings (override flags)  [settings.json]
   --view <waterfall|sheet>  tablet view on first start         [waterfall]
@@ -166,6 +170,10 @@ pub fn parse<I: Iterator<Item = String>>(mut args: I) -> Result<Config, String> 
             "--demo" => c.demo = true,
             "--http" => c.http = Some(val(&a)?).filter(|v| v != "off"),
             "--https" => c.https = Some(val(&a)?).filter(|v| v != "off"),
+            "--rtpmidi" => {
+                let v = val(&a)?;
+                c.rtpmidi = if v == "off" { None } else { Some(num::<u16>(&v, &a)?).filter(|&p| p < u16::MAX) };
+            }
             "--songs" => c.songs_dir = PathBuf::from(val(&a)?),
             "--view" => {
                 let v = val(&a)?;

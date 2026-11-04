@@ -11,7 +11,7 @@ use crate::color::{GammaLut, Rgb};
 use crate::hal::LedDriver;
 use crate::health::Health;
 use crate::keymap::KeyMap;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_PREVIEW};
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_PREVIEW, HINT_REQUIRED};
 use crate::settings::{Settings, SettingsStore};
 
 /// Envelope level is 8.8 fixed point: 0..=MAX_LEVEL.
@@ -186,7 +186,9 @@ impl Renderer {
 
             let lvl = (self.level[n] >> 8) as u8;
             let h = notes.hint(n);
-            let c = if lvl != 0 {
+            // A key held over from an earlier step must not look satisfied (green):
+            // while wait mode still needs a fresh press, its hint wins.
+            let c = if lvl != 0 && h & HINT_REQUIRED == 0 {
                 let base = self.feedback[n].unwrap_or(self.note_color[n]);
                 self.gamma.apply(base.scale(lvl))
             } else if h & HINT_BLINK != 0 && blink_off {
@@ -482,6 +484,28 @@ mod tests {
         notes.set_playing(true);
         r.update(&notes, Duration::from_secs(300));
         assert_eq!(r.pixels()[0], Rgb::new(0, 15, 15));
+    }
+
+    #[test]
+    fn held_key_still_required_shows_its_hint_not_green() {
+        let mut r = renderer();
+        r.hand_color = [Rgb::new(0, 0, 255), Rgb::new(0, 255, 0)];
+        let notes = NoteState::new();
+        notes.set_practice(true);
+        // Pressed for the previous chord (right: green), still held.
+        notes.set_hint(60, crate::notes::HINT_RIGHT);
+        notes.note_on(60, 127);
+        r.update(&notes, Duration::from_millis(50));
+        r.update(&notes, Duration::from_millis(50));
+        assert_eq!(r.pixels()[80], RIGHT_KEY);
+        // Next chord needs C again and it hasn't been re-pressed: hint, not green.
+        notes.set_hint(60, crate::notes::HINT_RIGHT | HINT_REQUIRED);
+        r.update(&notes, Duration::from_millis(16));
+        assert_eq!(r.pixels()[80], Rgb::new(0, 0, 255));
+        // Once satisfied the player drops the flag and the held key is green again.
+        notes.set_hint(60, 0);
+        r.update(&notes, Duration::from_millis(50));
+        assert_eq!(r.pixels()[80], RIGHT_KEY);
     }
 
     #[test]

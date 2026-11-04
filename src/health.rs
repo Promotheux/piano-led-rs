@@ -19,6 +19,8 @@ pub struct Health {
     /// When `led_fps` was last written, in ms since `started`.
     fps_at_ms: AtomicU64,
     ws_clients: AtomicU16,
+    /// RTP-MIDI sessions: (peer SSRC, peer name).
+    rtp_peers: Mutex<Vec<(u32, String)>>,
 }
 
 #[derive(Serialize)]
@@ -30,6 +32,8 @@ pub struct Snapshot {
     pub led_fps: u16,
     /// Tablets with an open live-state WebSocket.
     pub ws_clients: u16,
+    /// Computers connected over network MIDI (RTP-MIDI).
+    pub rtp_peers: Vec<String>,
 }
 
 impl Health {
@@ -41,7 +45,18 @@ impl Health {
             led_fps: AtomicU16::new(0),
             fps_at_ms: AtomicU64::new(0),
             ws_clients: AtomicU16::new(0),
+            rtp_peers: Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn rtp_joined(&self, ssrc: u32, name: &str) {
+        let mut peers = self.rtp_peers.lock().unwrap();
+        peers.retain(|(s, n)| *s != ssrc && n != name); // a reconnect replaces the old session
+        peers.push((ssrc, name.to_string()));
+    }
+
+    pub fn rtp_left(&self, ssrc: u32) {
+        self.rtp_peers.lock().unwrap().retain(|(s, _)| *s != ssrc);
     }
 
     fn now_ms(&self) -> u64 {
@@ -80,6 +95,7 @@ impl Health {
                 self.led_fps.load(Relaxed)
             },
             ws_clients: self.ws_clients.load(Relaxed),
+            rtp_peers: self.rtp_peers.lock().unwrap().iter().map(|(_, n)| n.clone()).collect(),
         }
     }
 }

@@ -12,7 +12,7 @@ Prioritized: work top to bottom. Tick items off as they land.
       plus the permanent NetworkManager setting): see README, "Network MIDI".
 
 ## Phase 1.5: System Provisioning, RTP-MIDI & Network Fallback
-- [ ] **Native Rust RTP-MIDI integration**: replace external system daemons by implementing AppleMIDI/RTP-MIDI directly in Tokio using `rtpmidi` with automatic mDNS advertisement.
+- [x] **Native RTP-MIDI**: built-in AppleMIDI/RTP-MIDI listener on plain threads and UDP (no Tokio), announced via avahi; replaces rtpmidid.
 - [x] **Wi-Fi Fallback Hotspot (AP Mode)**: `PianoLED-Setup` via NetworkManager plus a watchdog timer (`install.sh`).
 - [x] **Wi-Fi setup page in the app**: pick a network and enter its password while on the hotspot, for headless reconfiguration.
 - [x] **Provisioning script**: `install.sh` (binary, service, songs, power save, fallback hotspot; `--dry-run`).

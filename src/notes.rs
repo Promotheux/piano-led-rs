@@ -27,6 +27,9 @@ pub const HINT_BRIGHT: u8 = 4;
 pub const HINT_BLINK: u8 = 8;
 /// The next notes after the ones to play now (wait mode), shown faintly.
 pub const HINT_PREVIEW: u8 = 16;
+/// Wait mode: this key of the current chord still needs a fresh press, so
+/// the hint shows even while the key is held from an earlier step.
+pub const HINT_REQUIRED: u8 = 32;
 
 pub struct NoteState {
     held: [AtomicU8; 128],

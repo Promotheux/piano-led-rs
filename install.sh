@@ -62,6 +62,13 @@ else
   echo "not installed"
 fi
 
+step "rtpmidid (replaced by plv's built-in network MIDI on the same port)"
+if systemctl cat rtpmidid.service >/dev/null 2>&1; then
+  run systemctl disable --now rtpmidid.service
+else
+  echo "not installed"
+fi
+
 step "Wi-Fi power save (off: it delays incoming network MIDI by seconds)"
 # Every client Wi-Fi profile (not hotspots), so it stays off whichever one the Pi joins.
 nmcli -t -f NAME,TYPE connection show | awk -F: '$2=="802-11-wireless" {print $1}' | while IFS= read -r wifi; do

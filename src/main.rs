@@ -16,6 +16,7 @@ mod midi;
 mod notes;
 mod player;
 mod render;
+mod rtpmidi;
 mod settings;
 mod tls;
 mod web;
@@ -94,12 +95,31 @@ fn main() {
     let player = Arc::new(Player::new());
     let _ = player.command(player::Command { reach: Some(initial.hand_reach), ..Default::default() });
     let midi_out: Arc<Mutex<Option<MidiOut>>> = Arc::new(Mutex::new(None));
+    // Network MIDI from a PC, alongside USB. A taken port (rtpmidid) is logged, not fatal.
+    let rtp_out = match cfg.rtpmidi.map(|port| rtpmidi::spawn(port, notes.clone(), render_handle.clone(), health.clone())) {
+        Some(Ok(out)) => {
+            let port = cfg.rtpmidi.unwrap();
+            rtpmidi::advertise(Some(port));
+            eprintln!("rtp-midi: listening on ports {port}-{} as '{}'", port + 1, rtpmidi::SESSION_NAME);
+            Some(out)
+        }
+        Some(Err(e)) => {
+            eprintln!("{e}");
+            None
+        }
+        None => {
+            rtpmidi::advertise(None);
+            None
+        }
+    };
+
     let player_thread = {
         let (p, n, o, r) = (player.clone(), notes.clone(), midi_out.clone(), running.clone());
+        let rtp = rtp_out.clone();
         std::thread::Builder::new()
             .name("plv-player".into())
             .stack_size(128 * 1024)
-            .spawn(move || player::run(p, n, o, r))
+            .spawn(move || player::run(p, n, o, rtp, r))
             .unwrap_or_else(|e| fatal(&format!("spawn player thread: {e}")))
     };
 

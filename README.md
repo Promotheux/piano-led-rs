@@ -103,6 +103,8 @@ the falling notes from a 20 Hz state stream, smoothed locally.
 | `settings.rs` | Settings changeable at runtime, validated, saved as JSON (write-then-rename). |
 | `web.rs` | `tiny_http` server (HTTP and HTTPS) with the embedded `ui/` files, a JSON API and a push-only WebSocket. |
 | `tls.rs` | Local certificate authority and server certificate for HTTPS (`rcgen`). |
+| `rtpmidi.rs` | Built-in RTP-MIDI (AppleMIDI) listener: sessions, clock sync, MIDI list parsing; announced via avahi. |
+| `wifi.rs` | Wi-Fi scan and connect through `nmcli`. |
 | `hal/` | LED drivers: PWM (GPIO18), SPI (GPIO10), terminal preview, null. |
 
 ### Memory and latency
@@ -153,10 +155,19 @@ uses it.
 `/boot/firmware/config.txt`. With more than ~440 LEDs, also add
 `spidev.bufsiz=32768` to `cmdline.txt`.
 
-## Network MIDI (rtpmidid) and WiFi power saving
+## Network MIDI (RTP-MIDI) and WiFi power saving
 
-If the piano reaches the Pi over WiFi (rtpMIDI from a PC to `rtpmidid`), turn
-off WiFi power saving. Otherwise incoming MIDI gets held up for seconds and
+plv has RTP-MIDI built in (ports 5004/5005, `--rtpmidi <port|off>`), so a PC
+can send MIDI over WiFi, e.g. from a DAW or VST host, alongside USB. avahi
+announces the session as **Piano LED**: in rtpMIDI on Windows it appears under
+*Directory*; select it and click *Connect*. Notes go through the same path as
+USB (LEDs, wait mode, feedback), and the player sends its notes back over the
+session (Listen mode, the other hand, the song's pedal), so the piano or a VST
+on the PC plays along. Lost packets aren't recovered; a note-off that
+never arrives is released after 10 seconds. It replaces `rtpmidid`, which uses
+the same port; `install.sh` disables it.
+
+When MIDI reaches the Pi over WiFi, turn off WiFi power saving. Otherwise incoming MIDI gets held up for seconds and
 then arrives in bursts, which looks like frozen LEDs. To turn it off now:
 
 ```bash

@@ -14,7 +14,8 @@ use midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 use serde::{Deserialize, Serialize};
 
 use crate::midi::MidiOut;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_RIGHT};
+use crate::rtpmidi::RtpOut;
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_REQUIRED, HINT_RIGHT};
 
 /// Notes starting within this window count as one chord in wait mode.
 const CHORD_MS: u32 = 60;
@@ -590,7 +591,8 @@ impl State {
                 }
                 if self.pos < t + n.dur as f64 {
                     let blink = if self.blink[n.key as usize] { HINT_BLINK } else { 0 };
-                    h[n.key as usize] = hand | blink;
+                    let required = if self.waiting && t > self.pos { HINT_REQUIRED } else { 0 };
+                    h[n.key as usize] = hand | blink | required;
                 }
             } else if t <= self.pos && self.sounding[n.key as usize] {
                 h[n.key as usize] = hand | HINT_BRIGHT;
@@ -759,6 +761,7 @@ pub fn run(
     player: Arc<Player>,
     notes: Arc<NoteState>,
     out: Arc<Mutex<Option<MidiOut>>>,
+    rtp: Option<Arc<RtpOut>>,
     running: Arc<AtomicBool>,
 ) {
     let mut last = Instant::now();
@@ -776,6 +779,9 @@ pub fn run(
                 }
                 if let Some(o) = o.as_mut() {
                     o.send(&m);
+                }
+                if let Some(r) = &rtp {
+                    r.send(&m);
                 }
             };
             s.tick(dt, |k| notes.presses(k as usize), &mut send);
@@ -796,6 +802,9 @@ pub fn run(
     s.all_off(&mut |m| {
         if let Some(o) = o.as_mut() {
             o.send(&m);
+        }
+        if let Some(r) = &rtp {
+            r.send(&m);
         }
     });
 }
@@ -865,7 +874,7 @@ mod tests {
         assert!(out.is_empty(), "left hand must wait too: {out:?}");
         // Hints show the whole chord in the right-hand colour.
         let h = p.state.lock().unwrap().hints();
-        assert_eq!((h[72], h[76]), (HINT_RIGHT, HINT_RIGHT));
+        assert_eq!((h[72], h[76]), (HINT_RIGHT | HINT_REQUIRED, HINT_RIGHT | HINT_REQUIRED));
 
         run_ms(&p, 100, &[72], &mut out); // only half the chord
         assert!(p.status().waiting);
@@ -901,7 +910,7 @@ mod tests {
         assert_eq!(st.done, vec![72]);
         let h = p.state.lock().unwrap().hints();
         assert_eq!(h[72], 0, "no re-prompt for the played key");
-        assert_eq!(h[76], HINT_RIGHT, "the missing key is still shown");
+        assert_eq!(h[76], HINT_RIGHT | HINT_REQUIRED, "the missing key is still shown, as required");
         run_ms(&p, 50, &[72, 76], &mut out);
         assert!(!p.status().waiting, "72 still counts without pressing it again");
         assert!(p.status().done.is_empty());
@@ -1042,13 +1051,13 @@ mod tests {
         let mut out = vec![];
         run_ms(&p, 2000, &[], &mut out); // waiting at the first chord
         let h = p.state.lock().unwrap().hints();
-        assert_eq!((h[72], h[76]), (HINT_RIGHT, HINT_RIGHT), "keys to play now");
+        assert_eq!((h[72], h[76]), (HINT_RIGHT | HINT_REQUIRED, HINT_RIGHT | HINT_REQUIRED), "keys to play now");
         assert_eq!(h[40], HINT_LEFT | HINT_PREVIEW, "next slice, whichever hand");
         assert_eq!(h[74], 0, "not the slice after it");
         // Play the chord: now 40 is due and 74 becomes the preview.
         run_ms(&p, 850, &[72, 76], &mut out);
         let h = p.state.lock().unwrap().hints();
-        assert_eq!(h[40], HINT_LEFT);
+        assert_eq!(h[40], HINT_LEFT | HINT_REQUIRED, "waiting for it now");
         assert_eq!(h[74], HINT_RIGHT | HINT_PREVIEW);
         // Outside wait mode there is no preview.
         p.command(Command { mode: Some(Mode::Other), ..Default::default() }).unwrap();
