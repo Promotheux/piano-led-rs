@@ -181,31 +181,39 @@ The binary ends up at `target/armv7-unknown-linux-gnueabihf/release/plv`. The UI
 is embedded in it, so it's the only file to copy. Leave out `--features pwm`
 for an SPI-only build with no C dependencies.
 
-## Install as a service (replacing the Python visualizer)
+## Install on the Pi
+
+On Raspberry Pi OS (Bookworm or later), from a checkout of this repo with the
+built binary copied next to the script:
 
 ```bash
-sudo install -m 755 plv /usr/local/bin/plv
+git clone https://github.com/Promotheux/piano-led-rs && cd piano-led-rs
 ```
 
 ```bash
-sudo install -m 644 systemd/plv.service /etc/systemd/system/plv.service
+sudo ./install.sh ./plv
 ```
 
-```bash
-sudo systemctl disable --now visualizer.service
-```
+`sudo ./install.sh --dry-run` shows every step without changing anything. The
+script is safe to run again, e.g. to update the binary. It:
 
-```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now plv.service
-```
+- installs `/usr/local/bin/plv` and the `plv` service (app on port 80, HTTPS on
+  443; the original's PHP add-on keeps 8080);
+- uses `/var/lib/plv/songs` as the library, linked to the original
+  visualizer's `Songs` folder when that exists;
+- disables the original `visualizer.service` (both drive GPIO18 and port 80;
+  its files stay);
+- turns Wi-Fi power save off in every Wi-Fi profile (see "Network MIDI");
+- adds a fallback hotspot **PianoLED-Setup**: when no known Wi-Fi is in range
+  the Pi opens its own network, and with the piano on USB you can keep playing
+  at `http://10.42.0.1/`. Its password is printed once and kept in
+  `/var/lib/plv/hotspot-password` (set your own with `HOTSPOT_PASSWORD=…`). A
+  timer drops the hotspot every 2 minutes while nobody uses it, so the Pi
+  rejoins home Wi-Fi when it's back.
 
-The unit serves the app on port 80 and HTTPS on 443 (the original's PHP add-on keeps 8080) and
-reads songs from `/home/Piano-LED-Visualizer/Songs`. Settings live in
-`/var/lib/plv/settings.json`; on the first start they're seeded from the
-command-line flags and written there. The unit declares
-`Conflicts=visualizer.service`, so the two never drive GPIO18 at the same time.
-
-To switch back to the Python version:
+Settings live in `/var/lib/plv/settings.json`; on the first start they're
+seeded from the command-line flags and written there. To switch back to the
+Python version:
 
 ```bash
 sudo systemctl disable --now plv.service && sudo systemctl enable --now visualizer.service

@@ -13,8 +13,10 @@ Prioritized: work top to bottom. Tick items off as they land.
 
 ## Phase 1.5: System Provisioning, RTP-MIDI & Network Fallback
 - [ ] **Native Rust RTP-MIDI integration**: replace external system daemons by implementing AppleMIDI/RTP-MIDI directly in Tokio using `rtpmidi` with automatic mDNS advertisement.
-- [ ] **Wi-Fi Fallback Hotspot (AP Mode)**: configure NetworkManager / auto-watchdog script to spawn an AP hotspot (`PianoLED-Setup`) when the primary Wi-Fi connection drops, enabling headless network reconfiguration from a phone or tablet.
-- [ ] **Flashable RPi Image & Provisioning Script**: create a single-command installer and automated build pipeline to flash a clean Raspberry Pi OS Lite image with pre-configured binaries, `systemd` services, power-save overrides, and fallback profiles.
+- [x] **Wi-Fi Fallback Hotspot (AP Mode)**: `PianoLED-Setup` via NetworkManager plus a watchdog timer (`install.sh`).
+- [ ] **Wi-Fi setup page in the app**: pick a network and enter its password while on the hotspot, for headless reconfiguration.
+- [x] **Provisioning script**: `install.sh` (binary, service, songs, power save, fallback hotspot; `--dry-run`).
+- [ ] **Flashable image**: a ready Raspberry Pi OS Lite image (needs release binaries from the Phase 4 CI first).
 
 ## Phase 2: Practice features & learning engine
 

@@ -13,7 +13,7 @@ User=root
 # Settings (LEDs, colours, MIDI port, hand reach) are edited in the app and
 # saved to /var/lib/plv/settings.json; flags here only seed the first start.
 StateDirectory=plv
-ExecStart=/usr/local/bin/plv --http 0.0.0.0:80 --https 0.0.0.0:443 --songs /home/Piano-LED-Visualizer/Songs --settings /var/lib/plv/settings.json
+ExecStart=/usr/local/bin/plv --http 0.0.0.0:80 --https 0.0.0.0:443 --songs /var/lib/plv/songs --settings /var/lib/plv/settings.json
 Restart=on-failure
 RestartSec=2
 # Keep frame timing tight on a loaded system.
