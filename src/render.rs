@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::color::{GammaLut, Rgb};
 use crate::hal::LedDriver;
+use crate::health::Health;
 use crate::keymap::KeyMap;
 use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_PREVIEW};
 use crate::settings::{Settings, SettingsStore};
@@ -30,6 +31,9 @@ const BLINK_HALF_US: u64 = 62_500;
 /// Practice-mode feedback colours for keys you press.
 const RIGHT_KEY: Rgb = Rgb::new(0, 255, 0);
 const WRONG_KEY: Rgb = Rgb::new(255, 0, 0);
+/// A key held this long with no new press is treated as a lost note-off
+/// (dropped network MIDI packet) and released.
+const STUCK_NOTE_US: u32 = 10_000_000;
 
 #[derive(Clone, Debug)]
 pub struct RenderConfig {
@@ -82,6 +86,10 @@ pub struct Renderer {
     clock_us: u64,
     /// Time since the last key press or playing song (backlight screensaver).
     idle_us: u64,
+    /// How long each key has been held since its last press (stuck-note guard).
+    held_us: [u32; 128],
+    /// `NoteState::presses` as last seen, to spot a re-press of a held key.
+    presses_seen: [u8; 128],
     pixels: Box<[Rgb]>,
     gamma: GammaLut,
     was_dark: bool,
@@ -104,6 +112,8 @@ impl Renderer {
             feedback: [None; 128],
             clock_us: 0,
             idle_us: 0,
+            held_us: [0; 128],
+            presses_seen: [0; 128],
             pixels,
             gamma,
             was_dark: false, // force one blanking frame at start-up
@@ -148,6 +158,7 @@ impl Renderer {
         let practice = notes.practice();
 
         for n in 0..128usize {
+            self.release_if_stuck(notes, n, dt_us);
             let struck = notes.take_struck(n);
             active |= struck != 0 || notes.held(n) != 0;
             self.gap[n] = self.gap[n].saturating_sub(dt_us.min(u32::MAX as u64) as u32);
@@ -227,6 +238,22 @@ impl Renderer {
         send
     }
 
+    /// Releases key `n` after [`STUCK_NOTE_US`] without a note-off or a new press.
+    fn release_if_stuck(&mut self, notes: &NoteState, n: usize, dt_us: u64) {
+        let presses = notes.presses(n);
+        if notes.held(n) == 0 || presses != self.presses_seen[n] {
+            self.presses_seen[n] = presses;
+            self.held_us[n] = 0;
+            return;
+        }
+        self.held_us[n] = self.held_us[n].saturating_add(dt_us.min(u32::MAX as u64) as u32);
+        if self.held_us[n] >= STUCK_NOTE_US {
+            // shortcut: a note-on landing between the check and this store is lost; needs a 10 s hold to hit.
+            notes.note_off(n as u8);
+            self.held_us[n] = 0;
+        }
+    }
+
     /// Scales the whole frame down uniformly if it would exceed the budget.
     fn limit_power(&mut self) {
         let led_count = self.pixels.len() as u32;
@@ -260,6 +287,7 @@ pub fn run(
     mut driver: Box<dyn LedDriver>,
     notes: Arc<NoteState>,
     settings: Arc<SettingsStore>,
+    health: Arc<Health>,
     running: Arc<AtomicBool>,
 ) {
     let mut seen_gen = u32::MAX;
@@ -270,6 +298,8 @@ pub fn run(
     let mut last = Instant::now();
     let mut next = last + period;
     let mut errors = 0u32;
+    let mut frames = 0u16;
+    let mut fps_since = last;
 
     while running.load(Ordering::Relaxed) {
         let now = Instant::now();
@@ -295,6 +325,12 @@ pub fn run(
         let dt = now - last;
         last = now;
         next = now + period;
+        frames = frames.saturating_add(1);
+        if now - fps_since >= Duration::from_secs(1) {
+            health.set_led_fps(frames);
+            frames = 0;
+            fps_since = now;
+        }
 
         if renderer.update(&notes, dt) {
             if let Err(e) = driver.show(renderer.pixels()) {
@@ -505,5 +541,25 @@ mod tests {
         r.update(&notes, Duration::ZERO);
         let sum: u32 = r.pixels().iter().map(|p| p.r as u32 + p.g as u32 + p.b as u32).sum();
         assert!(sum * 20 / 255 <= 300 - 176);
+    }
+
+    #[test]
+    fn stuck_notes_are_released() {
+        let mut r = renderer();
+        let notes = NoteState::new();
+        let step = Duration::from_secs(4);
+        notes.note_on(60, 100);
+        notes.note_on(61, 100);
+        r.update(&notes, Duration::ZERO);
+        r.update(&notes, step);
+        notes.note_on(61, 100); // re-press without a note-off restarts the clock
+        r.update(&notes, step);
+        assert_eq!(notes.held(60), 100);
+        r.update(&notes, step); // 60 held 12 s
+        assert_eq!(notes.held(60), 0);
+        assert_eq!(notes.held(61), 100);
+        r.update(&notes, step);
+        r.update(&notes, step);
+        assert_eq!(notes.held(61), 0);
     }
 }

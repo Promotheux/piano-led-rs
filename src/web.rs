@@ -15,6 +15,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 
+use crate::health::{self, Health};
 use crate::midi;
 use crate::notes::NoteState;
 use crate::player::{self, Command, Player, Status};
@@ -39,6 +40,7 @@ pub struct App {
     pub notes: Arc<NoteState>,
     pub settings: Arc<SettingsStore>,
     pub player: Arc<Player>,
+    pub health: Arc<Health>,
     pub songs_dir: PathBuf,
     /// Local CA certificate (DER) to install on tablets, when HTTPS is on.
     pub ca_der: Option<Vec<u8>>,
@@ -97,6 +99,7 @@ fn handle(app: &Arc<App>, mut req: Request) {
             Ok(inputs) => json(&serde_json::json!({ "inputs": inputs })),
             Err(e) => error(500, &e),
         },
+        (Method::Get, "/api/health") => json(&app.health.snapshot()),
         (Method::Get, "/api/player") => json(&app.player.status()),
         (Method::Post, "/api/player") => post_player(app, &mut req),
         (Method::Get, "/api/player/song") => match app.player.song_json() {
@@ -307,6 +310,7 @@ struct Live {
     held: Vec<u8>,
     /// Bumps on every settings change, so open tablets reload them.
     settings_gen: u32,
+    health: health::Snapshot,
 }
 
 fn websocket(app: &Arc<App>, req: Request) {
@@ -328,11 +332,13 @@ fn websocket(app: &Arc<App>, req: Request) {
         .stack_size(128 * 1024)
         .spawn(move || {
             let mut ws = WebSocket::from_raw_socket(stream, Role::Server, None);
+            app.health.ws_opened();
             loop {
                 let live = Live {
                     status: app.player.status(),
                     held: (0u8..128).filter(|&k| app.notes.held(k as usize) != 0).collect(),
                     settings_gen: app.settings.generation(),
+                    health: app.health.snapshot(),
                 };
                 let msg = serde_json::to_string(&live).unwrap_or_default();
                 // The client went away (or the network did): end this thread.
@@ -341,6 +347,7 @@ fn websocket(app: &Arc<App>, req: Request) {
                 }
                 std::thread::sleep(PUSH_INTERVAL);
             }
+            app.health.ws_closed();
         });
 }
 

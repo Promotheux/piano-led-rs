@@ -4,12 +4,17 @@ Prioritized: work top to bottom. Tick items off as they land.
 
 ## Phase 1: Reliability & diagnostics (high priority)
 
-- [ ] **Stuck-note safety net**: auto-release a held key after a timeout without
+- [x] **Stuck-note safety net**: auto-release a held key after a timeout without
       a note-off (lost packets over network MIDI), so its LED can't stay lit.
-- [ ] **Connection health in the UI/API**: MIDI port in use, WebSocket state,
+- [x] **Connection health in the UI/API**: MIDI port in use, WebSocket state,
       LED frame rate, so a freeze can be diagnosed from the tablet.
 - [x] **Document the Wi-Fi power-save fix** (`iw dev wlan0 set power_save off`,
       plus the permanent NetworkManager setting): see README, "Network MIDI".
+
+## Phase 1.5: System Provisioning, RTP-MIDI & Network Fallback
+- [ ] **Native Rust RTP-MIDI integration**: replace external system daemons by implementing AppleMIDI/RTP-MIDI directly in Tokio using `rtpmidi` with automatic mDNS advertisement.
+- [ ] **Wi-Fi Fallback Hotspot (AP Mode)**: configure NetworkManager / auto-watchdog script to spawn an AP hotspot (`PianoLED-Setup`) when the primary Wi-Fi connection drops, enabling headless network reconfiguration from a phone or tablet.
+- [ ] **Flashable RPi Image & Provisioning Script**: create a single-command installer and automated build pipeline to flash a clean Raspberry Pi OS Lite image with pre-configured binaries, `systemd` services, power-save overrides, and fallback profiles.
 
 ## Phase 2: Practice features & learning engine
 

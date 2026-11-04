@@ -264,6 +264,8 @@ pub struct Status {
     pub hand: Practise,
     pub tempo: u16,
     pub loop_ab: Option<[i64; 2]>,
+    /// While waiting: keys of the chord already played (they stay satisfied).
+    pub done: Vec<u8>,
 }
 
 /// Partial update from the UI; absent fields are left alone.
@@ -393,6 +395,17 @@ impl State {
         if std::mem::take(&mut self.pedal_down) {
             out([0xb0, 64, 0]);
         }
+    }
+
+    /// Keys of the chord we're waiting at that already have their press.
+    fn chord_done(&self) -> Vec<u8> {
+        let Some(song) = self.song.as_ref().filter(|_| self.waiting) else { return Vec::new() };
+        let start = song.notes.partition_point(|n| (n.t as f64) <= self.pos);
+        (start..song.notes.len())
+            .take_while(|&i| (song.notes[i].t as f64) <= self.pos + CHORD_MS as f64 + 1.0)
+            .filter(|&i| self.practised(i) && self.played(song.notes[i].key, song.notes[i].t as f64 - EARLY_MS))
+            .map(|i| song.notes[i].key)
+            .collect()
     }
 
     /// Whether key `k` has an unused press made at or after song time `since`.
@@ -570,6 +583,11 @@ impl State {
                 continue;
             }
             if self.practised(i) {
+                // A key of the chord we're waiting at that you already played
+                // stays satisfied when released: don't prompt for it again.
+                if self.waiting && t > self.pos && self.played(n.key, t - EARLY_MS) {
+                    continue;
+                }
                 if self.pos < t + n.dur as f64 {
                     let blink = if self.blink[n.key as usize] { HINT_BLINK } else { 0 };
                     h[n.key as usize] = hand | blink;
@@ -682,6 +700,7 @@ impl Player {
             hand: s.practise,
             tempo: s.tempo,
             loop_ab: s.loop_ab.map(|(a, b)| [a as i64, b as i64]),
+            done: s.chord_done(),
         }
     }
 
@@ -868,6 +887,24 @@ mod tests {
         p.command(Command { reach: Some(0), seek: Some(-100.0), ..Default::default() }).unwrap();
         run_ms(&p, 200, &[76, 84], &mut out);
         assert!(p.status().waiting);
+    }
+
+    #[test]
+    fn played_chord_keys_stay_satisfied_after_release() {
+        let p = player_with(song(&[(0, 500, 72, 0), (0, 500, 76, 0)]), Mode::Wait);
+        let mut out = vec![];
+        run_ms(&p, 2200, &[], &mut out); // waiting at the chord
+        // 72 pressed (press count 1) and released; 76 not yet.
+        run_ms(&p, 300, &[72], &mut out);
+        let st = p.status();
+        assert!(st.waiting);
+        assert_eq!(st.done, vec![72]);
+        let h = p.state.lock().unwrap().hints();
+        assert_eq!(h[72], 0, "no re-prompt for the played key");
+        assert_eq!(h[76], HINT_RIGHT, "the missing key is still shown");
+        run_ms(&p, 50, &[72, 76], &mut out);
+        assert!(!p.status().waiting, "72 still counts without pressing it again");
+        assert!(p.status().done.is_empty());
     }
 
     #[test]

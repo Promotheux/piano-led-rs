@@ -56,9 +56,13 @@ $('#fullscreen').addEventListener('click', () => {
 // ---------- live connection ----------
 function connect() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  ws.onopen = () => $('#conn').classList.add('on');
+  ws.onopen = () => {
+    wsOpen = true;
+    renderHealth();
+  };
   ws.onclose = () => {
-    $('#conn').classList.remove('on');
+    wsOpen = false;
+    renderHealth();
     setTimeout(connect, 1500);
   };
   ws.onmessage = (e) => {
@@ -67,6 +71,28 @@ function connect() {
     onLive();
   };
 }
+
+// Health: the Pi pushes 20 times a second, so 2 s of silence means the link
+// (or the Pi) froze even if the socket still looks open.
+let wsOpen = false;
+function renderHealth() {
+  const age = live ? (performance.now() - liveAt) / 1000 : Infinity;
+  const stale = !wsOpen || age > 2;
+  const h = stale ? null : live.health;
+  const set = (id, text, bad) => {
+    $(id).textContent = text;
+    $(id).classList.toggle('bad', !!bad);
+  };
+  set('#h-link', !wsOpen ? 'Reconnecting…' : stale ? `No data for ${Math.round(age)} s` : 'Live', stale);
+  set('#h-in', h ? h.midi_in || 'No keyboard found' : '–', h && !h.midi_in);
+  set('#h-out', h ? h.midi_out || 'None' : '–', h && !h.midi_out);
+  set('#h-fps', h ? `${h.led_fps} fps` : '–', h && !h.led_fps);
+  set('#h-ws', h ? String(h.ws_clients) : '–');
+  const problem = stale ? 'No connection to the Pi' : !h.midi_in ? 'No keyboard connected' : !h.led_fps ? 'LEDs stalled' : '';
+  $('#conn').classList.toggle('on', !problem);
+  $('#conn').title = problem || 'Connected';
+}
+setInterval(renderHealth, 1000);
 
 function onLive() {
   // Another tablet (or this one) changed settings: reload them.
@@ -380,7 +406,9 @@ function draw() {
       if (t + dur < pos) continue;
       // While waiting, light the chord you're expected to play.
       const ahead = live && live.waiting && practised(n) ? 61 : 0;
-      if (t <= pos + ahead) active.set(key, hand);
+      // Chord keys you already played stay done while the song waits.
+      const done = live && live.waiting && live.done && live.done.includes(key);
+      if (t <= pos + ahead && !done) active.set(key, hand);
       if (practised(n) && t <= pos + (live.waiting ? 61 : 250)) expected.add(key);
     }
     if (settings && settings.view_mode === 'sheet') drawSheet(pos);

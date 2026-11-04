@@ -27,6 +27,10 @@ button, input, select { font: inherit; color: inherit; }
 .topright { display: flex; align-items: center; gap: 10px; }
 .conn { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); }
 .conn.on { background: var(--ok); }
+.health { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; }
+.health dt { color: var(--muted); }
+.health dd { margin: 0; overflow-wrap: anywhere; }
+.health .bad { color: var(--warn); }
 
 main { flex: 1; min-height: 0; position: relative; }
 .view { position: absolute; inset: 0; display: none; flex-direction: column; padding: 16px; gap: 12px; overflow: auto; }

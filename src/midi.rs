@@ -49,18 +49,25 @@ pub fn list_ports() -> Result<Vec<String>, String> {
 }
 
 /// Picks the port whose name contains `filter` (case-insensitive), or else the
-/// first port that isn't the ALSA "Midi Through" loopback or ourselves.
+/// first port that could be an instrument (see [`auto_candidate`]).
 fn pick_port<T: MidiIO>(io: &T, filter: Option<&str>) -> Option<(T::Port, String)> {
     let filter = filter.map(str::to_lowercase);
     io.ports().into_iter().find_map(|p| {
         let name = io.port_name(&p).ok()?;
-        let lname = name.to_lowercase();
         let ok = match &filter {
-            Some(f) => lname.contains(f.as_str()),
-            None => !lname.contains("midi through") && !lname.starts_with(CLIENT_NAME),
+            Some(f) => name.to_lowercase().contains(f.as_str()),
+            None => auto_candidate(&name),
         };
         ok.then_some((p, name))
     })
+}
+
+/// Skips ports that are never an instrument: the ALSA loopback, ourselves,
+/// and rtpmidid's own service ports (its remote sessions are named after the
+/// peer, e.g. "rtpmidid:CHESTNUT").
+fn auto_candidate(name: &str) -> bool {
+    let n = name.to_lowercase();
+    !n.contains("midi through") && !n.starts_with(CLIENT_NAME) && !n.contains("network export") && !n.contains("announcements")
 }
 
 /// A live MIDI connection. Dropping it closes the port.
@@ -117,6 +124,15 @@ impl MidiListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_port_skips_service_ports() {
+        let ports = ["Midi Through:Midi Through Port-0 14:0", "rtpmidid:Network Export 128:0", "rtpmidid:CHESTNUT 128:1"];
+        assert_eq!(ports.iter().find(|p| auto_candidate(p)), Some(&"rtpmidid:CHESTNUT 128:1"));
+        assert!(!auto_candidate("rtpmidid:Announcements 128:2"));
+        assert!(!auto_candidate("plv:plv-out 130:0"));
+        assert!(auto_candidate("Portable Grand-1"));
+    }
 
     #[test]
     fn decode() {

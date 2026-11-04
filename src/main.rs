@@ -10,6 +10,7 @@
 mod color;
 mod config;
 mod hal;
+mod health;
 mod keymap;
 mod midi;
 mod notes;
@@ -23,6 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use health::Health;
 use keymap::KeyMap;
 use midi::{MidiListener, MidiOut};
 use notes::NoteState;
@@ -69,6 +71,7 @@ fn main() {
     let led_count = initial.led_count;
 
     let notes = Arc::new(NoteState::new());
+    let health = Arc::new(Health::new());
     let driver = hal::open(cfg.driver, led_count, cfg.hw).unwrap_or_else(|e| fatal(&e));
     let mut renderer = Renderer::new(
         cfg.render.clone(),
@@ -78,11 +81,11 @@ fn main() {
     renderer.apply(&initial);
 
     let render_thread = {
-        let (n, s, r) = (notes.clone(), store.clone(), running.clone());
+        let (n, s, h, r) = (notes.clone(), store.clone(), health.clone(), running.clone());
         std::thread::Builder::new()
             .name("plv-render".into())
             .stack_size(RENDER_STACK)
-            .spawn(move || render::run(renderer, driver, n, s, r))
+            .spawn(move || render::run(renderer, driver, n, s, h, r))
             .unwrap_or_else(|e| fatal(&format!("spawn render thread: {e}")))
     };
     let render_handle = render_thread.thread().clone();
@@ -108,6 +111,7 @@ fn main() {
         notes: notes.clone(),
         settings: store.clone(),
         player: player.clone(),
+        health: health.clone(),
         songs_dir: cfg.songs_dir.clone(),
         ca_der: tls.as_ref().map(|t| t.ca_der.clone()),
     });
@@ -127,9 +131,10 @@ fn main() {
     eprintln!("plv: {led_count} LEDs, {:?} driver, {} fps", cfg.driver, cfg.render.fps);
 
     if cfg.demo {
+        health.set_midi_in(Some("demo scale".into()));
         demo(&notes, &running, &render_handle);
     } else {
-        supervise_midi(&store, &notes, &midi_out, &running, render_handle);
+        supervise_midi(&store, &notes, &midi_out, &health, &running, render_handle);
     }
 
     running.store(false, Ordering::Relaxed);
@@ -145,6 +150,7 @@ fn supervise_midi(
     store: &SettingsStore,
     notes: &Arc<NoteState>,
     midi_out: &Mutex<Option<MidiOut>>,
+    health: &Health,
     running: &AtomicBool,
     render: std::thread::Thread,
 ) {
@@ -161,6 +167,8 @@ fn supervise_midi(
                 conn = None;
                 *midi_out.lock().unwrap() = None;
                 notes.all_off();
+                health.set_midi_in(None);
+                health.set_midi_out(None);
             }
         }
         match &conn {
@@ -169,11 +177,14 @@ fn supervise_midi(
                 conn = None;
                 *midi_out.lock().unwrap() = None;
                 notes.all_off();
+                health.set_midi_in(None);
+                health.set_midi_out(None);
             }
             Some(_) => {}
             None => match MidiListener::connect(port.as_deref(), notes.clone(), Some(render.clone())) {
                 Ok(Some(c)) => {
                     eprintln!("midi: listening on '{}'", c.port_name);
+                    health.set_midi_in(Some(c.port_name.clone()));
                     conn = Some(c);
                     warned = false;
                 }
@@ -190,6 +201,7 @@ fn supervise_midi(
             match MidiOut::connect(port.as_deref()) {
                 Ok(Some(o)) => {
                     eprintln!("midi: sending to '{}'", o.port_name);
+                    health.set_midi_out(Some(o.port_name.clone()));
                     *midi_out.lock().unwrap() = Some(o);
                 }
                 Ok(None) => {}
