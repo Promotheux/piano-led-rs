@@ -18,7 +18,8 @@ for arg in "$@"; do
   esac
 done
 
-HERE=$(cd "$(dirname "$0")" && pwd)
+# readlink: also works when called through a symlink (the image has plv-install.sh).
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 STATE=/var/lib/plv
 ORIGINAL_SONGS=/home/Piano-LED-Visualizer/Songs
 HOTSPOT=PianoLED-Setup
@@ -26,11 +27,6 @@ HOTSPOT=PianoLED-Setup
 run() {
   echo "+ $*"
   [ -n "$DRY_RUN" ] || "$@"
-}
-
-# Writes stdin to a file (or shows where it would go in a dry run).
-put() {
-  if [ -n "$DRY_RUN" ]; then echo "+ write $1"; cat >/dev/null; else cat >"$1"; fi
 }
 
 step() { echo; echo "== $*"; }
@@ -94,34 +90,9 @@ else
   echo "hotspot password: $PASS (saved in $STATE/hotspot-password)"
 fi
 
-# On the hotspot the Pi can't see whether home Wi-Fi is back. Every 2 minutes,
-# if nobody is connected to it, step down so NetworkManager tries home again.
-put /usr/local/lib/plv-wifi-fallback <<EOF
-#!/bin/sh
-nmcli -t -f NAME connection show --active | grep -qx "$HOTSPOT" || exit 0
-[ "\$(/sbin/iw dev wlan0 station dump | grep -c '^Station')" -eq 0 ] && nmcli connection down "$HOTSPOT"
-exit 0
-EOF
-run chmod 755 /usr/local/lib/plv-wifi-fallback
-put /etc/systemd/system/plv-wifi-fallback.service <<'EOF'
-[Unit]
-Description=Leave the plv fallback hotspot when nobody uses it
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/lib/plv-wifi-fallback
-EOF
-put /etc/systemd/system/plv-wifi-fallback.timer <<'EOF'
-[Unit]
-Description=Check every 2 minutes whether home Wi-Fi is back
-
-[Timer]
-OnBootSec=3min
-OnUnitActiveSec=2min
-
-[Install]
-WantedBy=timers.target
-EOF
+# Steps down from the hotspot when nobody uses it, so the Pi rejoins home Wi-Fi.
+run install -m 755 "$HERE/systemd/plv-wifi-fallback" /usr/local/lib/plv-wifi-fallback
+run install -m 644 "$HERE/systemd/plv-wifi-fallback.service" "$HERE/systemd/plv-wifi-fallback.timer" /etc/systemd/system/
 
 step "Start"
 run systemctl daemon-reload

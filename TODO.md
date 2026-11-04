@@ -16,7 +16,7 @@ Prioritized: work top to bottom. Tick items off as they land.
 - [x] **Wi-Fi Fallback Hotspot (AP Mode)**: `PianoLED-Setup` via NetworkManager plus a watchdog timer (`install.sh`).
 - [x] **Wi-Fi setup page in the app**: pick a network and enter its password while on the hotspot, for headless reconfiguration.
 - [x] **Provisioning script**: `install.sh` (binary, service, songs, power save, fallback hotspot; `--dry-run`).
-- [ ] **Flashable image**: a ready Raspberry Pi OS Lite image (needs release binaries from the Phase 4 CI first).
+- [x] **Flashable image**: `build_image.sh` builds it locally from a downloaded Raspberry Pi OS Lite image.
 
 ## Phase 2: Practice features & learning engine
 

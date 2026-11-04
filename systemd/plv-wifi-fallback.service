@@ -1,0 +1,6 @@
+[Unit]
+Description=Leave the plv fallback hotspot when nobody uses it
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/plv-wifi-fallback

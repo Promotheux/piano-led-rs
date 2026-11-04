@@ -236,6 +236,30 @@ Python version:
 sudo systemctl disable --now plv.service && sudo systemctl enable --now visualizer.service
 ```
 
+## Flashable image
+
+`build_image.sh` turns a downloaded **32-bit Raspberry Pi OS Lite** image
+(`.img` or `.img.xz`) into one with plv preinstalled. It doesn't touch the
+download. On Linux, as root:
+
+```bash
+sudo ./build_image.sh 2024-11-19-raspios-bookworm-armhf-lite.img.xz
+```
+
+On Windows or macOS, run it in the build image from "Build":
+
+```bash
+docker run --rm --privileged -v "$PWD:/src" -w /src plv-armv7 ./build_image.sh 2024-11-19-raspios-bookworm-armhf-lite.img.xz
+```
+
+The result (`plv-<date>.img`) has the binary, the enabled `plv` service, the
+fallback hotspot (its password is printed and saved as
+`plv-<date>.img.hotspot-password.txt`), Wi-Fi power save off for every
+network, an empty song library (or `SONGS_DIR=…` to preload songs) and
+`plv-install.sh` for re-provisioning later. Flash it with Raspberry Pi Imager
+(*Use custom*) and set user, Wi-Fi and SSH in Imager's settings. Everything is
+copied in as files, so no ARM emulation is needed.
+
 ## Run by hand
 
 ```bash
