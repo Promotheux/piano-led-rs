@@ -562,6 +562,15 @@ impl State {
         let ahead = if self.waiting { CHORD_MS as f64 + 1.0 } else { EARLY_MS };
         let lo = self.pos - song.max_dur as f64;
         let first = song.notes.partition_point(|n| (n.t as f64) < lo);
+        let mut until = self.pos + ahead;
+        if self.mode == Mode::Wait {
+            // Nothing past the chord the clock will stop at lights up as "play
+            // now": it would flash bright, then drop back to a preview there.
+            let from = song.notes.partition_point(|n| (n.t as f64) <= self.pos);
+            if let Some(i) = (from..song.notes.len()).find(|&i| self.practised(i) && !self.ignored(&song.notes[i])) {
+                until = until.min((song.notes[i].t + CHORD_MS) as f64);
+            }
+        }
         // Wait mode previews the next note (or chord) of each hand on its own,
         // so both hands show what's coming; keys that are already lit keep
         // their hint. Index 0 = right hand, 1 = left.
@@ -573,7 +582,7 @@ impl State {
                 continue;
             }
             let hand = if self.hand_of(n) == Hand::Right { HINT_RIGHT } else { HINT_LEFT };
-            if t > self.pos + ahead {
+            if t > until {
                 if self.mode != Mode::Wait || t > self.pos + PREVIEW_HORIZON_MS {
                     break;
                 }
@@ -593,7 +602,9 @@ impl State {
                 if self.waiting && t > self.pos && self.played(n.key, t - EARLY_MS) {
                     continue;
                 }
-                if self.pos < t + n.dur as f64 {
+                // Wait mode only gets past a note once it's played: a long note
+                // then goes dark, so a lit key always means "play this".
+                if self.pos < t + n.dur as f64 && !(self.mode == Mode::Wait && t <= self.pos) {
                     let blink = if self.blink[n.key as usize] { HINT_BLINK } else { 0 };
                     let required = if self.waiting && t > self.pos { HINT_REQUIRED } else { 0 };
                     h[n.key as usize] = hand | blink | required;
@@ -975,6 +986,34 @@ mod tests {
         let p = player_with(song(&[(1000, 200, 72, 0)]), Mode::Other);
         let mut out = vec![];
         run_ms(&p, 2900, &[], &mut out); // pos ~ 900
+        assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT);
+    }
+
+    #[test]
+    fn notes_behind_the_next_stop_never_flash_bright() {
+        // Left 40 at 1000, right 72 just behind it at 1100: within the early
+        // window while the clock runs, but the clock stops at 40 first.
+        let p = player_with(song(&[(1000, 100, 40, 1), (1100, 100, 72, 0)]), Mode::Wait);
+        p.command(Command { hand: Some(Practise::Both), ..Default::default() }).unwrap();
+        let mut out = vec![];
+        run_ms(&p, 2900, &[], &mut out); // pos ~ 900, clock running
+        let h = p.state.lock().unwrap().hints();
+        assert_eq!(h[40], HINT_LEFT, "the next stop lights up early");
+        assert_eq!(h[72] & HINT_PREVIEW, HINT_PREVIEW, "what comes after it stays a preview");
+    }
+
+    #[test]
+    fn a_played_long_note_goes_dark_in_wait_mode() {
+        let p = player_with(song(&[(1000, 2000, 72, 0)]), Mode::Wait);
+        let mut out = vec![];
+        run_ms(&p, 3100, &[], &mut out); // waiting at it
+        assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT | HINT_REQUIRED);
+        run_ms(&p, 300, &[72], &mut out); // played; the note sounds on till 3000
+        assert!(!p.status().waiting);
+        assert_eq!(p.state.lock().unwrap().hints()[72], 0);
+        // Play-along keeps it lit for its whole length.
+        let p = player_with(song(&[(1000, 2000, 72, 0)]), Mode::Other);
+        run_ms(&p, 3500, &[72], &mut out); // pos ~ 1500
         assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT);
     }
 

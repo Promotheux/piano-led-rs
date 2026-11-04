@@ -23,7 +23,7 @@ const RESTRIKE_DIM: u8 = 64;
 /// ...for this long, then jumps back to full, so repeated notes separate.
 const RESTRIKE_GAP_US: u32 = 40_000;
 /// Level (of 255) of the faint preview of the next notes.
-const PREVIEW_SHARE: u8 = 102; // ~40% of a "play now" hint
+const PREVIEW_SHARE: u8 = 102; // ~40% of a "play now" hint, perceived
 /// Backlight turns off after this long with no keys pressed and no song playing.
 const SCREENSAVER_US: u64 = 120_000_000;
 /// Half period of the "you're taking long" blink (8 flashes per second).
@@ -200,8 +200,9 @@ impl Renderer {
                 if h & HINT_PREVIEW != 0 {
                     // A share of the "play now" hint, so it follows the brightness
                     // setting and keeps its hand colour, but always clearly above
-                    // the backlight and unlit LEDs.
-                    let c = self.gamma.apply(hand).scale(PREVIEW_SHARE);
+                    // the backlight and unlit LEDs. Scaled before gamma: a share
+                    // of the output looks nearly as bright as the full hint.
+                    let c = self.gamma.apply(hand.scale(PREVIEW_SHARE));
                     let floor = bl_peak.saturating_add(4).max(6);
                     if peak(c) < floor { at_peak(hand, floor) } else { c }
                 } else {
