@@ -166,9 +166,11 @@ fn put_settings(app: &App, req: &mut Request) -> Resp {
         Err(e) => return error(400, &e.to_string()),
     };
     let reach = new.hand_reach;
+    let lights = improv::Command { lights: Some(new.improv_lights), split: Some(new.improv_split), ..Default::default() };
     match app.settings.set(new) {
         Ok(()) => {
             let _ = app.player.command(Command { reach: Some(reach), ..Default::default() });
+            let _ = app.improv.command(lights);
             json(&app.settings.get())
         }
         Err(e) => error(400, &e),

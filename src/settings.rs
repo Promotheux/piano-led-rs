@@ -45,6 +45,10 @@ pub struct Settings {
     pub view_mode: String,
     /// Show pitch names on the notes in the tablet view.
     pub note_names: bool,
+    /// Improv mode: what lights up, and the lowest key of the improvising
+    /// hand (chords are read below it).
+    pub improv_lights: crate::improv::Lights,
+    pub improv_split: u8,
 }
 
 impl Default for Settings {
@@ -78,6 +82,8 @@ impl Settings {
             backlight_brightness: 0,
             view_mode: c.view_mode.clone(),
             note_names: false,
+            improv_lights: crate::improv::Lights::default(),
+            improv_split: crate::improv::SPLIT,
         }
     }
 
@@ -99,6 +105,7 @@ impl Settings {
         check(hex(&self.backlight_color), "backlight_color must be #rrggbb")?;
         check(self.hand_reach <= 48, "hand_reach must be 0..=48")?;
         check(VIEW_MODES.contains(&self.view_mode.as_str()), "view_mode must be waterfall or sheet")?;
+        check(crate::improv::SPLIT_RANGE.contains(&self.improv_split), "improv_split must be 36..=84 (C2..C6)")?;
         check(self.midi_port.as_ref().map_or(true, |p| p.len() <= 128), "midi_port too long")
     }
 

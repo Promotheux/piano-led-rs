@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::notes::{HINT_LEFT, HINT_PREVIEW, HINT_RIGHT};
 
-/// Keys below this are the chord hand; the LEDs guide the keys from here up.
+/// Default split: keys below it are the chord hand, the LEDs guide the keys
+/// from here up. Set in the settings (`improv_split`).
 pub const SPLIT: u8 = 60; // C4
+/// Allowed split points: C2..C6.
+pub const SPLIT_RANGE: std::ops::RangeInclusive<u8> = 36..=84;
 const VELOCITY: u8 = 70;
 
 /// Chord shapes as semitones above the root; the UI names them in this
@@ -45,6 +48,19 @@ pub enum Source {
     Lead,
     /// The instrument plays a progression.
     Backing,
+}
+
+/// What lights up above the split.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Lights {
+    /// Chord tones bright, the rest of the scale dim.
+    #[default]
+    Scale,
+    /// Only the key's pentatonic: its chord tones bright, the rest dim.
+    Pentatonic,
+    /// Only the chord tones.
+    Chord,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -123,7 +139,7 @@ pub struct Status {
     /// Key as a pitch class, C = 0.
     pub key: u8,
     pub scale: Scale,
-    pub pentatonic: bool,
+    pub lights: Lights,
     pub progression: Progression,
     pub tempo: u16,
     pub split: u8,
@@ -142,7 +158,9 @@ pub struct Command {
     pub source: Option<Source>,
     pub key: Option<u8>,
     pub scale: Option<Scale>,
-    pub pentatonic: Option<bool>,
+    pub lights: Option<Lights>,
+    /// Lowest key of the improvising hand; see [`SPLIT_RANGE`].
+    pub split: Option<u8>,
     /// Also sets the scale to the progression's.
     pub progression: Option<Progression>,
     pub tempo: Option<u16>,
@@ -153,7 +171,8 @@ struct State {
     source: Source,
     key: u8,
     scale: Scale,
-    pentatonic: bool,
+    lights: Lights,
+    split: u8,
     progression: Progression,
     tempo: u16,
     chord: Option<(u8, u8)>,
@@ -176,7 +195,8 @@ impl Improv {
                 source: Source::Lead,
                 key: 0,
                 scale: Scale::Major,
-                pentatonic: false,
+                lights: Lights::Scale,
+                split: SPLIT,
                 progression: Progression::Pop,
                 tempo: 80,
                 chord: None,
@@ -192,6 +212,9 @@ impl Improv {
         let mut s = self.state.lock().unwrap();
         if c.key.is_some_and(|k| k > 11) {
             return Err("key must be a pitch class 0 (C) to 11 (B)".into());
+        }
+        if c.split.is_some_and(|k| !SPLIT_RANGE.contains(&k)) {
+            return Err("split must be C2 (36) to C6 (84)".into());
         }
         if c.tempo.is_some_and(|t| !(40..=200).contains(&t)) {
             return Err("tempo must be 40 to 200 bpm".into());
@@ -213,8 +236,11 @@ impl Improv {
         if let Some(x) = c.scale {
             s.scale = x;
         }
-        if let Some(x) = c.pentatonic {
-            s.pentatonic = x;
+        if let Some(x) = c.lights {
+            s.lights = x;
+        }
+        if let Some(x) = c.split {
+            s.split = x;
         }
         if let Some(x) = c.tempo {
             s.tempo = x;
@@ -237,10 +263,10 @@ impl Improv {
             source: s.source,
             key: s.key,
             scale: s.scale,
-            pentatonic: s.pentatonic,
+            lights: s.lights,
             progression: s.progression,
             tempo: s.tempo,
-            split: SPLIT,
+            split: s.split,
             chord: s.chord.filter(|_| s.active),
             next: s.bar.filter(|_| backing).map(|b| s.chord_of(bars[(b + 1) % bars.len()])),
             beat: if backing { ((s.clock_ms / s.beat_ms()) as u64 % 4) as u8 } else { 0 },
@@ -263,7 +289,7 @@ impl Improv {
                 // The chord stays after you let go, until you play another.
                 let mut keys = [0u8; 16];
                 let mut n = 0;
-                for k in (21..SPLIT).filter(|&k| held(k)) {
+                for k in (21..s.split).filter(|&k| held(k)) {
                     if n < keys.len() {
                         keys[n] = k;
                         n += 1;
@@ -318,14 +344,21 @@ impl State {
     }
 
     fn hints(&self) -> [u8; 128] {
-        let scale = self.scale.notes(self.pentatonic);
+        let scale = match self.lights {
+            Lights::Scale => self.scale.notes(false),
+            Lights::Pentatonic => self.scale.notes(true),
+            Lights::Chord => &[],
+        };
         let chord = self.chord.map(|(root, shape)| (root, CHORDS[shape as usize]));
         let mut h = [0u8; 128];
-        for k in SPLIT..=108 {
+        for k in self.split..=108 {
             let pc = k % 12;
-            if chord.is_some_and(|(root, tones)| tones.contains(&((pc + 12 - root) % 12))) {
+            let in_chord = chord.is_some_and(|(root, tones)| tones.contains(&((pc + 12 - root) % 12)));
+            let in_scale = scale.contains(&((pc + 12 - self.key) % 12));
+            // Pentatonic only: a chord tone outside it stays dark too.
+            if in_chord && (self.lights != Lights::Pentatonic || in_scale) {
                 h[k as usize] = HINT_LEFT;
-            } else if scale.contains(&((pc + 12 - self.key) % 12)) {
+            } else if in_scale {
                 h[k as usize] = HINT_RIGHT | HINT_PREVIEW;
             }
         }
@@ -397,9 +430,24 @@ mod tests {
         let h = im.tick(10.0, |_| false, &mut |m| out.push(m)).unwrap();
         assert_eq!((h[69], im.status().chord), (HINT_LEFT, Some((9, MIN))));
         // Pentatonic: F and B drop out.
-        on(&im, Command { pentatonic: Some(true), ..Default::default() });
+        on(&im, Command { lights: Some(Lights::Pentatonic), ..Default::default() });
         let h = im.tick(10.0, |_| false, &mut |m| out.push(m)).unwrap();
-        assert_eq!((h[65], h[71], h[62]), (0, 0, HINT_RIGHT | HINT_PREVIEW));
+        assert_eq!((h[65], h[71], h[62], h[69]), (0, 0, HINT_RIGHT | HINT_PREVIEW, HINT_LEFT));
+        // Chord tones only.
+        on(&im, Command { lights: Some(Lights::Chord), ..Default::default() });
+        let h = im.tick(10.0, |_| false, &mut |m| out.push(m)).unwrap();
+        assert_eq!((h[62], h[64], h[69], h[72]), (0, HINT_LEFT, HINT_LEFT, HINT_LEFT));
+    }
+
+    #[test]
+    fn the_split_moves_chord_input_and_lights() {
+        let im = Improv::new();
+        on(&im, Command { active: Some(true), split: Some(48), ..Default::default() }); // C3
+        // E3 G3 above the new split don't count towards the chord: only C2.
+        let h = im.tick(10.0, |k| [36, 52, 55].contains(&k), &mut |_| {}).unwrap();
+        assert_eq!(im.status().chord, Some((0, 10)), "C2 alone reads as a power chord");
+        assert_eq!((h[47], h[48], h[52]), (0, HINT_LEFT, HINT_RIGHT | HINT_PREVIEW));
+        assert!(im.command(Command { split: Some(20), ..Default::default() }).is_err());
     }
 
     #[test]

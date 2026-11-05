@@ -134,7 +134,9 @@
         <div class="seg small" id="im-scale" aria-label="Scale">
           <button data-v="major">Major</button><button data-v="minor">Minor</button><button data-v="blues">Blues</button>
         </div>
-        <button id="im-penta" class="btn ghost toggle" aria-pressed="false">Pentatonic</button>
+        <div class="seg small" id="im-lights" aria-label="What lights up">
+          <button data-v="scale">Chord + scale</button><button data-v="pentatonic">Pentatonic</button><button data-v="chord">Chord only</button>
+        </div>
       </div>
       <div class="row wrap" id="im-backing">
         <div class="seg small" id="im-prog" aria-label="Progression">
@@ -194,6 +196,12 @@
         <legend>Practice</legend>
         <label>Player view <select name="view_mode"><option value="waterfall">Waterfall (falling notes)</option><option value="sheet">Sheet music (staff)</option></select></label>
         <label class="check"><input name="note_names" type="checkbox"> Show note names</label>
+        <label>Improv lights <select name="improv_lights">
+          <option value="scale">Chord bright, scale dim</option>
+          <option value="pentatonic">Pentatonic only</option>
+          <option value="chord">Chord tones only</option></select></label>
+        <label>Improv split <select name="improv_split" data-num></select>
+          <small>Improv mode reads chords below this key; the LEDs guide the keys from here up.</small></label>
         <label>Hand reach (semitones) <input name="hand_reach" type="number" min="0" max="48">
           <small id="reachhelp">16 = C3 to E4. Wider chords: the piano plays the notes you can't reach. 0 = off.</small></label>
         <label>MIDI port (USB) <select name="midi_port"></select>

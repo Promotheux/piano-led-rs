@@ -97,6 +97,11 @@ fn main() {
     let player = Arc::new(Player::new());
     let trainer = Arc::new(trainer::Trainer::new());
     let improv = Arc::new(improv::Improv::new());
+    let _ = improv.command(improv::Command {
+        lights: Some(initial.improv_lights),
+        split: Some(initial.improv_split),
+        ..Default::default()
+    });
     let _ = player.command(player::Command { reach: Some(initial.hand_reach), ..Default::default() });
     let midi_out: Arc<Mutex<Option<MidiOut>>> = Arc::new(Mutex::new(None));
     // Network MIDI from a PC, alongside USB. A taken port (rtpmidid) is logged, not fatal.

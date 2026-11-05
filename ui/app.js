@@ -294,7 +294,7 @@ function readForm() {
   for (const el of form.elements) {
     if (!el.name || !(el.name in s)) continue;
     if (el.type === 'checkbox') s[el.name] = el.checked;
-    else if (el.type === 'number' || el.type === 'range') s[el.name] = Number(el.value);
+    else if (el.type === 'number' || el.type === 'range' || 'num' in el.dataset) s[el.name] = Number(el.value);
     else if (el.name === 'note_offsets')
       s.note_offsets = el.value.split(',').map((p) => p.trim()).filter(Boolean).map((p) => p.split(':').map(Number));
     else if (el.name === 'midi_port') s.midi_port = el.value || null;
@@ -943,8 +943,7 @@ function renderImprov() {
   if (document.activeElement !== $('#im-key')) $('#im-key').value = m.key;
   if (document.activeElement !== $('#im-tempo')) $('#im-tempo').value = m.tempo;
   $('#im-tempoval').textContent = m.tempo;
-  $('#im-penta').classList.toggle('on', m.pentatonic);
-  $('#im-penta').setAttribute('aria-pressed', m.pentatonic);
+  setSeg('#im-lights', m.lights);
   $('#im-start').textContent = m.active ? 'Stop' : 'Start';
   $('#im-chord').textContent = m.active ? chordName(m.chord) || '…' : '\u00a0';
   $('#im-next').textContent = m.active && m.next ? `next: ${chordName(m.next)}` : '';
@@ -960,7 +959,14 @@ function renderImprov() {
   }
 }
 $('#im-start').addEventListener('click', () => live && improv({ active: !live.improv.active }));
-$('#im-penta').addEventListener('click', () => live && improv({ pentatonic: !live.improv.pentatonic }));
+// Lights and split are settings (kept across restarts): save them as such.
+$('#im-lights').addEventListener('click', (e) => {
+  if (!e.target.dataset.v || !settings) return;
+  form.improv_lights.value = e.target.dataset.v;
+  save();
+});
+form.improv_split.innerHTML = Array.from({ length: 49 }, (_, i) => 36 + i)
+  .map((k) => `<option value="${k}">${fullName(k)}</option>`).join('');
 $('#im-key').addEventListener('change', (e) => improv({ key: Number(e.target.value) }));
 $('#im-tempo').addEventListener('input', (e) => ($('#im-tempoval').textContent = e.target.value));
 $('#im-tempo').addEventListener('change', (e) => improv({ tempo: Number(e.target.value) }));
