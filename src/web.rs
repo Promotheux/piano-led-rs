@@ -28,6 +28,18 @@ const MAX_UPLOAD: u64 = 1 << 20;
 const MAX_JSON: u64 = 64 * 1024;
 const PUSH_INTERVAL: Duration = Duration::from_millis(50);
 
+/// Fingerprint of the embedded UI, sent with the live state: a tablet still
+/// running an older page reloads, so it can't save settings it doesn't know.
+fn ui_version() -> u64 {
+    static V: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        UI.iter().for_each(|f| f.2.hash(&mut h));
+        h.finish() >> 12 // fits a JS number exactly
+    })
+}
+
 static UI: &[(&str, &str, &[u8])] = &[
     ("/", "text/html; charset=utf-8", include_bytes!("../ui/index.html")),
     ("/app.js", "text/javascript; charset=utf-8", include_bytes!("../ui/app.js")),
@@ -423,6 +435,7 @@ struct Live {
     /// Bumps on every settings change, so open tablets reload them.
     settings_gen: u32,
     health: health::Snapshot,
+    ui: u64,
 }
 
 fn websocket(app: &Arc<App>, req: Request) {
@@ -453,6 +466,7 @@ fn websocket(app: &Arc<App>, req: Request) {
                     improv: app.improv.status(),
                     settings_gen: app.settings.generation(),
                     health: app.health.snapshot(),
+                    ui: ui_version(),
                 };
                 let msg = serde_json::to_string(&live).unwrap_or_default();
                 // The client went away (or the network did): end this thread.

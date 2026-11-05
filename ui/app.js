@@ -43,11 +43,13 @@ const prettyName = (n) => n.replace(/\.midi?$/i, '').replace(/[_]+/g, ' ');
 
 // ---------- navigation ----------
 function show(view) {
-  $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  const tab = $(`#${view}`).dataset.tab || view; // app views keep the Apps tab lit
+  $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.view === tab));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === view));
   if (view === 'player') resize();
 }
 $$('.tab').forEach((b) => b.addEventListener('click', () => show(b.dataset.view)));
+$$('[data-open]').forEach((b) => b.addEventListener('click', () => show(b.dataset.open)));
 $('#fullscreen').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -84,9 +86,11 @@ function renderHealth() {
     $(id).classList.toggle('bad', !!bad);
   };
   set('#h-link', !wsOpen ? 'Reconnecting…' : stale ? `No data for ${Math.round(age)} s` : 'Live', stale);
-  set('#h-in', h ? h.midi_in || 'No keyboard found' : '–', h && !h.midi_in);
-  const netOut = h && h.rtp_peers && h.rtp_peers.length ? `network: ${h.rtp_peers.join(', ')}` : '';
-  const outs = h ? [h.midi_out, netOut].filter(Boolean).join(' + ') : '';
+  // A network session carries MIDI both ways, so it counts as an input and an output.
+  const net = h && h.rtp_peers && h.rtp_peers.length ? `network: ${h.rtp_peers.join(', ')}` : '';
+  const ins = h ? [h.midi_in, net].filter(Boolean).join(' + ') : '';
+  set('#h-in', h ? ins || 'No keyboard found' : '–', h && !ins);
+  const outs = h ? [h.midi_out, net].filter(Boolean).join(' + ') : '';
   set('#h-out', h ? outs || 'None' : '–', h && !outs);
   set('#h-fps', h ? `${h.led_fps} fps` : '–', h && !h.led_fps);
   set('#h-ws', h ? String(h.ws_clients) : '–');
@@ -97,7 +101,11 @@ function renderHealth() {
 }
 setInterval(renderHealth, 1000);
 
+let uiVersion = null; // the Pi's UI build this page came from
 function onLive() {
+  // The Pi runs a newer UI: reload, so this page can't save settings it doesn't know.
+  if (uiVersion !== null && live.ui !== uiVersion) return location.reload();
+  uiVersion = live.ui;
   renderTrainer();
   renderImprov();
   // Another tablet (or this one) changed settings: reload them.
