@@ -102,7 +102,7 @@ the falling notes from a 20 Hz state stream, smoothed locally.
 | `render.rs` | Per-key envelopes, re-strike dip, hint and backlight layers, gamma and brightness table, current limiter. |
 | `player.rs` | MIDI file parsing (`midly`), hand assignment, hand-reach filter, the three modes, loop, tempo. |
 | `settings.rs` | Settings changeable at runtime, validated, saved as JSON (write-then-rename). |
-| `web.rs` | `tiny_http` server (HTTP and HTTPS) with the embedded `ui/` files, a JSON API and a push-only WebSocket. |
+| `web.rs` | `tiny_http` server (HTTP and HTTPS) with the embedded `ui/` files (ES modules in `ui/js/`, no build step), a JSON API and a push-only WebSocket. |
 | `tls.rs` | Local certificate authority and server certificate for HTTPS (`rcgen`). |
 | `rtpmidi.rs` | Built-in RTP-MIDI (AppleMIDI) listener: sessions, clock sync, MIDI list parsing; announced via avahi. |
 | `wifi.rs` | Wi-Fi scan and connect through `nmcli`. |

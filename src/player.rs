@@ -105,6 +105,9 @@ pub struct Song {
     /// Beat times in ms (the time signature's unit: quarters in 4/4), for the
     /// tablet's metronome.
     pub beats: Vec<u32>,
+    /// Key signatures as `(t_ms, sharps)`: 2 = D major / B minor, -3 = E♭
+    /// major / C minor. From the file, or guessed from the notes without one.
+    pub keys: Vec<(u32, i8)>,
     pub track_names: Vec<String>,
     pub len_ms: u32,
     max_dur: u32,
@@ -127,7 +130,7 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
                 TrackEventKind::Meta(MetaMessage::TrackName(n)) => {
                     names[ti] = String::from_utf8_lossy(n).trim().to_string();
                 }
-                TrackEventKind::Meta(MetaMessage::Tempo(_) | MetaMessage::TimeSignature(..))
+                TrackEventKind::Meta(MetaMessage::Tempo(_) | MetaMessage::TimeSignature(..) | MetaMessage::KeySignature(..))
                 | TrackEventKind::Midi { .. } => {
                     events.push((tick, ti as u8, e.kind));
                 }
@@ -153,6 +156,7 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
     let mut bar_ticks = (tpb * 4.0) as u64;
     let mut next_bar = 0u64;
     let mut beats = Vec::new();
+    let mut keys: Vec<(u32, i8)> = Vec::new();
     let mut beat_ticks = tpb as u64;
     let mut next_beat = 0u64;
     let metrical = fixed_ms_per_tick.is_none();
@@ -185,6 +189,11 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
         last_tick = tick;
         match kind {
             TrackEventKind::Meta(MetaMessage::Tempo(t)) => tempo_us = t.as_int().max(1) as f64,
+            TrackEventKind::Meta(MetaMessage::KeySignature(sharps, _minor)) => {
+                // Tracks often repeat it; the last one at a given time wins.
+                keys.retain(|&(t, _)| t != ms as u32);
+                keys.push((ms as u32, sharps.clamp(-7, 7)));
+            }
             TrackEventKind::Meta(MetaMessage::TimeSignature(num, den_pow, ..)) => {
                 // A new signature starts a new bar here.
                 bar_ticks = (tpb * 4.0 * num as f64 / f64::from(1u32 << den_pow.min(6))) as u64;
@@ -237,7 +246,11 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
     let max_dur = notes.iter().map(|n| n.dur).max().unwrap_or(0);
     bars.dedup();
     beats.dedup();
-    Ok(Song { notes, pedal, bars, beats, track_names: names, len_ms, max_dur })
+    keys.dedup_by_key(|k| k.1); // a repeat of the same key changes nothing
+    if keys.is_empty() {
+        keys.push((0, guess_key(&notes)));
+    }
+    Ok(Song { notes, pedal, bars, beats, keys, track_names: names, len_ms, max_dur })
 }
 
 /// Milliseconds since `last`, which moves to now.
@@ -246,6 +259,24 @@ fn dt_rec(last: &mut Instant) -> f64 {
     let dt = (now - *last).as_secs_f64() * 1000.0;
     *last = now;
     dt
+}
+
+/// The key signature (sharps, negative for flats) whose major scale holds
+/// the most note time. Major and relative minor share one, so that's all
+/// the spelling needs. Ties go to the signature with fewer accidentals.
+fn guess_key(notes: &[Note]) -> i8 {
+    const MAJOR: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
+    let mut weight = [0u64; 12];
+    for n in notes {
+        weight[(n.key % 12) as usize] += n.dur as u64;
+    }
+    (-6i8..=6)
+        .max_by_key(|&sf| {
+            let tonic = (sf as i32 * 7).rem_euclid(12) as u8;
+            let fit: u64 = MAJOR.iter().map(|&i| weight[((tonic + i) % 12) as usize]).sum();
+            (fit, std::cmp::Reverse(sf.unsigned_abs()))
+        })
+        .unwrap_or(0)
 }
 
 /// Length of the bar around song time `t` in ms (2 s without bar lines).
@@ -918,6 +949,8 @@ impl Player {
             notes: Vec<(u32, u32, u8, u8, u8, u8)>,
             bars: &'a [u32],
             beats: &'a [u32],
+            /// `[t, sharps]`, see [`Song::keys`].
+            keys: &'a [(u32, i8)],
         }
         let s = self.state.lock().unwrap();
         let song = s.song.as_ref()?;
@@ -948,6 +981,7 @@ impl Player {
                 .collect(),
             bars: &song.bars,
             beats: &song.beats,
+            keys: &song.keys,
         };
         serde_json::to_string(&view).ok()
     }
@@ -1054,7 +1088,7 @@ mod tests {
         notes.sort_by_key(|n| (n.t, n.key)); // same invariant as `parse`
         let len_ms = notes.iter().map(|n| n.t + n.dur).max().unwrap();
         let max_dur = notes.iter().map(|n| n.dur).max().unwrap();
-        Song { notes, pedal: vec![(0, 127), (150, 0)], bars: vec![], beats: vec![], track_names: vec!["R".into(), "L".into()], len_ms, max_dur }
+        Song { notes, pedal: vec![(0, 127), (150, 0)], bars: vec![], beats: vec![], keys: vec![(0, 0)], track_names: vec!["R".into(), "L".into()], len_ms, max_dur }
     }
 
     fn player_with(s: Song, mode: Mode) -> Player {
@@ -1409,6 +1443,19 @@ mod tests {
     }
 
     #[test]
+    fn guesses_the_key_from_the_notes_without_a_signature() {
+        let scale = |tonic: u8, steps: &[u8]| -> Vec<Note> {
+            steps.iter().enumerate()
+                .map(|(i, &s)| Note { t: i as u32 * 100, dur: 100, key: tonic + s, vel: 80, track: 0, value: 4 })
+                .collect()
+        };
+        const MAJOR: [u8; 8] = [0, 2, 4, 5, 7, 9, 11, 12];
+        assert_eq!(guess_key(&scale(62, &MAJOR)), 2, "D major: two sharps");
+        assert_eq!(guess_key(&scale(63, &MAJOR)), -3, "E♭ major: three flats");
+        assert_eq!(guess_key(&scale(60, &[0, 4, 7])), 0, "a C chord: C, not G or F");
+    }
+
+    #[test]
     fn loop_and_end_of_song() {
         let p = player_with(song(&[(0, 100, 60, 0)]), Mode::Listen);
         p.command(Command { loop_ab: Some(vec![0.0, 50.0]), seek: Some(0.0), ..Default::default() }).unwrap();
@@ -1435,6 +1482,7 @@ mod tests {
         smf.tracks.push(vec![
             ev(0, TrackEventKind::Meta(MetaMessage::Tempo(u24::new(1_000_000)))),
             ev(0, TrackEventKind::Meta(MetaMessage::TimeSignature(3, 2, 24, 8))),
+            ev(0, TrackEventKind::Meta(MetaMessage::KeySignature(-1, false))),
             ev(480, on(64, 90)),
             ev(480 * 4, on(65, 90)),
             ev(480, on(65, 0)),
@@ -1468,6 +1516,7 @@ mod tests {
         // 3/4 at 60 bpm: a bar every 3 s.
         assert_eq!(song.bars, vec![0, 3000, 6000]);
         assert_eq!(&song.beats[..4], &[0, 1000, 2000, 3000], "3/4 at 60 bpm: a beat a second");
+        assert_eq!(song.keys, vec![(0, -1)], "F major, from the file");
         assert_eq!(default_track_roles(&song), vec![TrackRole::Right, TrackRole::Left]);
         assert!(parse(b"not midi").is_err());
     }

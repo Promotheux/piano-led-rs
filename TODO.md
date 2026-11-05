@@ -46,11 +46,12 @@ Prioritized: work top to bottom. Tick items off as they land.
 
 ## Phase 3: Sheet music & frontend polish
 
-- [ ] **Key signature detection** (MIDI key-signature event) for correct
-      sharp/flat spelling instead of the fixed C♯/E♭/F♯/A♭/B♭ scheme.
-- [ ] **Staff layout**: beams for eighths and sixteenths, measure numbers, 8va
-      indicators for very high/low notes.
-- [ ] **Split `ui/app.js`** into ES modules (still no build step).
+- [x] **Key signature detection**: from the MIDI key-signature event, or
+      guessed from the notes; spelling, the signature on the staff, and
+      accidentals per bar (with naturals) follow it.
+- [x] **Staff layout**: beams for eighths and sixteenths, measure numbers,
+      8va/8vb lines for very high/low notes.
+- [x] **Split `ui/app.js`** into ES modules in `ui/js/` (still no build step).
 
 ## Phase 4: DevOps & hardware integrations
 
