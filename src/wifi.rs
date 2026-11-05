@@ -117,7 +117,31 @@ pub fn connect(ssid: &str, password: &str) -> Result<(), String> {
         args.extend(["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password]);
     }
     nmcli(&args)?;
-    nmcli(&["connection", "up", "id", ssid]).map(|_| ())
+    // Coming off the hotspot the radio has no fresh scan, so the first
+    // `up` often fails with "no network found" while NetworkManager's own
+    // autoconnect gets there seconds later: rescan, check, try again.
+    let mut last = String::new();
+    for attempt in 0..3 {
+        if attempt > 0 {
+            let _ = nmcli(&["device", "wifi", "rescan", "ifname", IFACE]);
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            if connected_to(ssid) {
+                return Ok(());
+            }
+        }
+        match nmcli(&["connection", "up", "id", ssid]) {
+            Ok(_) => return Ok(()),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
+}
+
+/// `wlan0` is fully connected through the profile `name`.
+fn connected_to(name: &str) -> bool {
+    let out = nmcli(&["-g", "GENERAL.STATE,GENERAL.CONNECTION", "device", "show", IFACE]).unwrap_or_default();
+    let mut lines = out.lines();
+    lines.next().is_some_and(|st| st.starts_with("100")) && lines.next() == Some(name)
 }
 
 #[cfg(test)]
