@@ -194,19 +194,19 @@ pub struct RtpOut {
 }
 
 impl RtpOut {
-    /// Remembers a peer's data address; `true` if it wasn't known yet.
-    fn learn(&self, ssrc: u32, addr: SocketAddr) -> bool {
+    /// Remembers a peer's data address. Returns whether it is new, and the
+    /// session it replaces: a computer that reconnects without saying goodbye
+    /// comes back from the same address with a new SSRC, and keeping both
+    /// would send it every note twice.
+    fn learn(&self, ssrc: u32, addr: SocketAddr) -> (bool, Option<u32>) {
         let mut peers = self.peers.lock().unwrap();
-        match peers.iter_mut().find(|(s, _)| *s == ssrc) {
-            Some(p) => {
-                p.1 = addr;
-                false
-            }
-            None => {
-                peers.push((ssrc, addr));
-                true
-            }
+        if let Some(p) = peers.iter_mut().find(|(s, _)| *s == ssrc) {
+            p.1 = addr;
+            return (false, None);
         }
+        let old = peers.iter().position(|(_, a)| *a == addr).map(|i| peers.swap_remove(i).0);
+        peers.push((ssrc, addr));
+        (true, old)
     }
 
     fn forget(&self, ssrc: u32) {
@@ -286,11 +286,16 @@ pub fn spawn(port: u16, notes: Arc<NoteState>, render: Thread, health: Arc<Healt
                 match parse_command(pkt) {
                     Some(Command::Invite { token, ssrc: peer, .. }) => {
                         let _ = data.send_to(&accept(token, ssrc), from);
-                        out_data.learn(peer, from);
+                        if let (_, Some(old)) = out_data.learn(peer, from) {
+                            health_data.rtp_left(old);
+                        }
                     }
                     Some(Command::Sync { ssrc: peer, count, ts1 }) => {
                         // A session that outlived a restart of plv: known again by its clock syncs.
-                        if out_data.learn(peer, from) {
+                        if let (true, old) = out_data.learn(peer, from) {
+                            if let Some(old) = old {
+                                health_data.rtp_left(old);
+                            }
                             health_data.rtp_joined(peer, &from.ip().to_string());
                         }
                         if count == 0 {
@@ -409,6 +414,9 @@ mod tests {
         out.send(&[0x90, 60, 100]); // no peers yet: nothing sent
         out.learn(42, rx.local_addr().unwrap());
         out.learn(42, rx.local_addr().unwrap()); // re-learning doesn't duplicate
+        // Reconnect from the same address with a new SSRC: replaces, doesn't add.
+        assert_eq!(out.learn(43, rx.local_addr().unwrap()), (true, Some(42)));
+        assert_eq!(out.peers.lock().unwrap().len(), 1);
         out.send(&[0x90, 60, 100]);
         out.send(&[0xb0, 64, 0]);
         let mut buf = [0u8; 64];
@@ -418,7 +426,7 @@ mod tests {
             assert!(parse_rtp_midi(&buf[..n], |m| got.push(m.to_vec())).is_some());
             assert_eq!(got, vec![want]);
         }
-        out.forget(42);
+        out.forget(43);
         assert!(out.peers.lock().unwrap().is_empty());
     }
 
