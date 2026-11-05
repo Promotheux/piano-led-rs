@@ -26,8 +26,8 @@ Prioritized: work top to bottom. Tick items off as they land.
   - Instant LED feedback: green for correct; red, with the right keys revealed
     in blue, for incorrect.
   - Streak, best, accuracy score and an auto range that grows with the streak.
-- [ ] **Improv mode**: the LEDs show which notes sound good right now, for
-      improvising with the right hand.
+- [x] **Improv mode** (Improv tab): the LEDs show which notes sound good right
+      now, for improvising with the right hand.
   - Chords from you (left hand below a split point, recognised live) or from a
     backing progression the piano plays (e.g. I–V–vi–IV, ii–V–I, 12-bar blues)
     in a chosen key and tempo.

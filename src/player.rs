@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::midi::MidiOut;
 use crate::rtpmidi::RtpOut;
+use crate::improv::Improv;
 use crate::trainer::Trainer;
 use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_REQUIRED, HINT_RIGHT};
 
@@ -779,6 +780,7 @@ pub fn run(
     out: Arc<Mutex<Option<MidiOut>>>,
     rtp: Option<Arc<RtpOut>>,
     trainer: Arc<Trainer>,
+    improv: Arc<Improv>,
     running: Arc<AtomicBool>,
 ) {
     let mut last = Instant::now();
@@ -802,11 +804,14 @@ pub fn run(
                 }
             };
             s.tick(dt, |k| notes.presses(k as usize), &mut send);
-            // The pitch trainer shares the instrument and the LEDs; while it's
-            // on, the song is paused (see web.rs) and its hints win.
-            match trainer.tick(dt, |k| notes.presses(k as usize), &mut send) {
-                Some(h) => {
-                    notes.set_practice(true);
+            // The pitch trainer and improv mode share the instrument and the
+            // LEDs; while one is on the song is paused (see web.rs) and its
+            // hints win. Improv doesn't judge keys: no green/red.
+            let trained = trainer.tick(dt, |k| notes.presses(k as usize), &mut send);
+            let improvised = improv.tick(dt, |k| notes.held(k as usize) != 0, &mut send);
+            match trained.map(|h| (h, true)).or(improvised.map(|h| (h, false))) {
+                Some((h, judge)) => {
+                    notes.set_practice(judge);
                     notes.set_playing(true);
                     (h, true)
                 }

@@ -21,6 +21,7 @@
     <button class="tab active" data-view="library" role="tab">Library</button>
     <button class="tab" data-view="player" role="tab">Play</button>
     <button class="tab" data-view="trainer" role="tab">Train</button>
+    <button class="tab" data-view="improv" role="tab">Improv</button>
     <button class="tab" data-view="settings" role="tab">Settings</button>
   </nav>
   <div class="topright">
@@ -114,6 +115,35 @@
         <dt>Right</dt><dd id="tr-score">–</dd>
       </dl>
       <button id="tr-reset" class="btn ghost">Reset score</button>
+    </div>
+  </section>
+
+  <section id="improv" class="view">
+    <div class="trainer">
+      <div class="seg" id="im-source" aria-label="Chords from">
+        <button data-v="lead">I play the chords</button>
+        <button data-v="backing">Backing</button>
+      </div>
+      <p id="im-help" class="tr-prompt"></p>
+      <p id="im-chord" class="tr-note">&nbsp;</p>
+      <p id="im-next" class="tr-keys"></p>
+      <div id="im-beats" class="beats" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <button id="im-start" class="btn primary">Start</button>
+      <div class="row wrap">
+        <label class="inline">Key <select id="im-key"></select></label>
+        <div class="seg small" id="im-scale" aria-label="Scale">
+          <button data-v="major">Major</button><button data-v="minor">Minor</button><button data-v="blues">Blues</button>
+        </div>
+        <button id="im-penta" class="btn ghost toggle" aria-pressed="false">Pentatonic</button>
+      </div>
+      <div class="row wrap" id="im-backing">
+        <div class="seg small" id="im-prog" aria-label="Progression">
+          <button data-v="pop">I–V–vi–IV</button><button data-v="fifties">I–vi–IV–V</button>
+          <button data-v="jazz">ii–V–I</button><button data-v="blues">12-bar blues</button><button data-v="minor">i–VI–III–VII</button>
+        </div>
+        <label class="tempo">Tempo <input id="im-tempo" type="range" min="40" max="200" step="5" value="80"><b id="im-tempoval">80</b></label>
+      </div>
+      <p class="tr-keys legend"><b class="sw chord"></b> chord notes, safe to land on &nbsp; <b class="sw scale"></b> scale notes, for passing</p>
     </div>
   </section>
 

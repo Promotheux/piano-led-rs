@@ -11,6 +11,7 @@ mod color;
 mod config;
 mod hal;
 mod health;
+mod improv;
 mod keymap;
 mod midi;
 mod notes;
@@ -95,6 +96,7 @@ fn main() {
 
     let player = Arc::new(Player::new());
     let trainer = Arc::new(trainer::Trainer::new());
+    let improv = Arc::new(improv::Improv::new());
     let _ = player.command(player::Command { reach: Some(initial.hand_reach), ..Default::default() });
     let midi_out: Arc<Mutex<Option<MidiOut>>> = Arc::new(Mutex::new(None));
     // Network MIDI from a PC, alongside USB. A taken port (rtpmidid) is logged, not fatal.
@@ -116,12 +118,12 @@ fn main() {
     };
 
     let player_thread = {
-        let (p, n, o, r, t) = (player.clone(), notes.clone(), midi_out.clone(), running.clone(), trainer.clone());
+        let (p, n, o, r, t, i) = (player.clone(), notes.clone(), midi_out.clone(), running.clone(), trainer.clone(), improv.clone());
         let rtp = rtp_out.clone();
         std::thread::Builder::new()
             .name("plv-player".into())
             .stack_size(128 * 1024)
-            .spawn(move || player::run(p, n, o, rtp, t, r))
+            .spawn(move || player::run(p, n, o, rtp, t, i, r))
             .unwrap_or_else(|e| fatal(&format!("spawn player thread: {e}")))
     };
 
@@ -135,6 +137,7 @@ fn main() {
         settings: store.clone(),
         player: player.clone(),
         trainer,
+        improv,
         health: health.clone(),
         songs_dir: cfg.songs_dir.clone(),
         ca_der: tls.as_ref().map(|t| t.ca_der.clone()),
