@@ -282,11 +282,11 @@ function fillForm(s) {
     if (!el.name || !(el.name in s)) continue;
     if (el.type === 'checkbox') el.checked = s[el.name];
     else if (el.name === 'note_offsets') el.value = s.note_offsets.map(([n, o]) => `${n}:${o}`).join(', ');
-    else if (el.name === 'color') el.value = s.color === 'rainbow' ? '#ffffff' : s.color;
+    else if (el.name === 'color') el.value = s.color.startsWith('#') ? s.color : '#ffffff';
     else el.value = s[el.name] ?? '';
   }
-  form.colormode.value = s.color === 'rainbow' ? 'rainbow' : 'single';
-  form.color.disabled = s.color === 'rainbow';
+  form.colormode.value = s.color.startsWith('#') ? 'single' : s.color;
+  form.color.disabled = form.colormode.value !== 'single';
   setSeg('#view', s.view_mode);
 }
 function readForm() {
@@ -300,13 +300,13 @@ function readForm() {
     else if (el.name === 'midi_port') s.midi_port = el.value || null;
     else s[el.name] = el.value;
   }
-  s.color = form.colormode.value === 'rainbow' ? 'rainbow' : form.color.value;
+  s.color = form.colormode.value === 'single' ? form.color.value : form.colormode.value;
   return s;
 }
 let saveTimer;
 form.addEventListener('input', (e) => {
   if (!e.target.name) return; // not a setting (e.g. the Wi-Fi fields)
-  if (e.target.name === 'colormode') form.color.disabled = form.colormode.value === 'rainbow';
+  if (e.target.name === 'colormode') form.color.disabled = form.colormode.value !== 'single';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, e.target.type === 'range' ? 150 : 600);
 });

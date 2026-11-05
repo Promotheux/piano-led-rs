@@ -14,13 +14,34 @@ pub enum ColorMode {
     Single(Rgb),
     /// Hue sweeps across the 88 keys (A0..C8).
     Rainbow,
+    /// One colour per pitch class, the same in every octave: C magenta
+    /// through blue, green and yellow to B red (the "musical spiral").
+    Spiral,
 }
 
+/// Spiral colours for C, C♯ … B.
+const SPIRAL: [Rgb; 12] = [
+    Rgb::new(255, 0, 200), // C magenta
+    Rgb::new(190, 0, 255), // C♯ purple
+    Rgb::new(110, 0, 255), // D violet
+    Rgb::new(0, 40, 255),  // D♯ blue
+    Rgb::new(0, 200, 255), // E cyan
+    Rgb::new(0, 255, 120), // F teal
+    Rgb::new(80, 255, 0),  // F♯ green
+    Rgb::new(255, 230, 0), // G yellow
+    Rgb::new(255, 170, 0), // G♯ amber
+    Rgb::new(255, 110, 0), // A orange
+    Rgb::new(255, 50, 0),  // A♯ red-orange
+    Rgb::new(255, 0, 0),   // B red
+];
+
 impl ColorMode {
-    /// `rainbow` or `RRGGBB` / `#RRGGBB`.
+    /// `rainbow`, `spiral` or `RRGGBB` / `#RRGGBB`.
     pub fn parse(s: &str) -> Option<Self> {
         if s == "rainbow" {
             Some(ColorMode::Rainbow)
+        } else if s == "spiral" {
+            Some(ColorMode::Spiral)
         } else {
             Rgb::from_hex(s).map(ColorMode::Single)
         }
@@ -35,6 +56,7 @@ impl ColorMode {
                     let k = (n as f32 - 21.0).clamp(0.0, 87.0) / 88.0;
                     Rgb::from_hsv(k * 360.0, 1.0, 1.0)
                 }
+                ColorMode::Spiral => SPIRAL[n % 12],
             };
         }
         t
@@ -106,7 +128,7 @@ Strip:
   --span <N>              LEDs lit per key                    [1]
 
 Look:
-  --color <rainbow|RRGGBB>                                    [rainbow]
+  --color <rainbow|spiral|RRGGBB>                             [rainbow]
   --brightness <0-255>                                        [128]
   --gamma <F>                                                 [2.2]
   --fade-ms <MS>          release fade                        [350]
@@ -150,7 +172,7 @@ pub fn parse<I: Iterator<Item = String>>(mut args: I) -> Result<Config, String> 
             }
             "--color" => {
                 let v = val(&a)?;
-                c.color = ColorMode::parse(&v).ok_or("--color expects rainbow or RRGGBB")?;
+                c.color = ColorMode::parse(&v).ok_or("--color expects rainbow, spiral or RRGGBB")?;
             }
             "--brightness" => c.render.brightness = num(&val(&a)?, &a)?,
             "--gamma" => c.render.gamma = num(&val(&a)?, &a)?,
@@ -223,6 +245,8 @@ mod tests {
         assert_eq!(c.geometry.note_offsets, vec![(60, 1), (90, -2)]);
         assert_eq!(c.driver, DriverKind::Null);
         assert!(matches!(c.color, ColorMode::Single(Rgb { r: 255, g: 0, b: 0 })));
+        let t = ColorMode::parse("spiral").unwrap().note_table();
+        assert_eq!((t[60], t[72], t[71]), (Rgb::new(255, 0, 200), Rgb::new(255, 0, 200), Rgb::new(255, 0, 0)), "C pink in every octave, B red");
     }
 
     #[test]

@@ -29,7 +29,7 @@ pub struct Settings {
     pub fade_ms: u32,
     pub velocity: bool,
     pub max_ma: u32,
-    /// Colour of keys you play: `rainbow` or `#rrggbb`.
+    /// Colour of keys you play: `rainbow`, `spiral` or `#rrggbb`.
     pub color: String,
     /// Player hint colours per hand.
     pub right_color: String,
@@ -72,6 +72,7 @@ impl Settings {
             max_ma: c.render.max_milliamps,
             color: match c.color {
                 ColorMode::Rainbow => "rainbow".into(),
+                ColorMode::Spiral => "spiral".into(),
                 ColorMode::Single(c) => format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b),
             },
             right_color: "#2f7cff".into(),
@@ -99,7 +100,7 @@ impl Settings {
         check(self.note_offsets.iter().all(|&(_, o)| o.abs() <= 100), "note offset out of range")?;
         check((1..=16).contains(&self.span), "span must be 1..=16")?;
         check(self.fade_ms <= 20_000, "fade too long")?;
-        check(self.color == "rainbow" || hex(&self.color), "color must be rainbow or #rrggbb")?;
+        check(["rainbow", "spiral"].contains(&self.color.as_str()) || hex(&self.color), "color must be rainbow, spiral or #rrggbb")?;
         check(hex(&self.right_color), "right_color must be #rrggbb")?;
         check(hex(&self.left_color), "left_color must be #rrggbb")?;
         check(hex(&self.backlight_color), "backlight_color must be #rrggbb")?;
