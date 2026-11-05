@@ -42,6 +42,8 @@ pub struct NoteState {
     presses: [AtomicU8; 128],
     practice: AtomicBool,
     playing: AtomicBool,
+    /// Last sustain pedal (CC 64) value, for recording; the LEDs ignore it.
+    pedal: AtomicU8,
 }
 
 impl NoteState {
@@ -55,7 +57,17 @@ impl NoteState {
             presses: [const { AtomicU8::new(0) }; 128],
             practice: AtomicBool::new(false),
             playing: AtomicBool::new(false),
+            pedal: AtomicU8::new(0),
         }
+    }
+
+    #[inline]
+    pub fn set_pedal(&self, value: u8) {
+        self.pedal.store(value, Relaxed);
+    }
+
+    pub fn pedal(&self) -> u8 {
+        self.pedal.load(Relaxed)
     }
 
     #[inline]

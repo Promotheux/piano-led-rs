@@ -29,7 +29,11 @@ pub fn handle_message(msg: &[u8], state: &NoteState) -> bool {
             state.note_off(note);
             false
         }
-        // The sustain pedal (CC 64) is deliberately ignored: LEDs follow the keys only.
+        // The sustain pedal (CC 64) is only kept for recording: LEDs follow the keys.
+        (0xb0, &[64, value, ..]) => {
+            state.set_pedal(value);
+            false
+        }
         // CC 120 All Sound Off / 123 All Notes Off.
         (0xb0, &[120 | 123, ..]) => {
             state.all_off();

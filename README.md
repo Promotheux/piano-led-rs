@@ -125,8 +125,11 @@ the falling notes from a 20 Hz state stream, smoothed locally.
 | POST | `/api/songs?name=<file.mid>` | raw `.mid` body |
 | GET/PUT | `/api/settings` | whole settings object |
 | GET | `/api/ports` | MIDI inputs |
-| GET/POST | `/api/player` | status / `{song?, playing?, mode?, hand?, tempo?, seek?, loop_ab?, track_hands?, reach?}` |
-| GET | `/api/player/song` | loaded song: tracks + notes `[t, dur, key, hand, out_of_reach]` |
+| GET/POST | `/api/player` | status / `{song?, playing?, mode?, hand?, tempo?, seek?, loop_ab?, ramp?, count_in?, track_roles?, reach?}` |
+| GET | `/api/player/song` | loaded song: tracks, notes `[t, dur, key, hand, out_of_reach, value]`, bars, beats |
+| GET/POST | `/api/trainer`, `/api/improv`, `/api/harmony` | the Apps (pitch trainer, improv, chord progressions): status / partial command |
+| GET | `/api/stats` | per song: `{finished, best_tempo, best_accuracy}` (kept in `stats.json` next to the settings) |
+| POST | `/api/record` | `{recording}`: start, or stop and save `Recording N.mid` to the library |
 | GET | `/ws` | WebSocket: player status + held keys, 20×/s |
 | GET | `/api/health` | MIDI in/out, LED frame rate, open tablets |
 | GET | `/api/wifi` | scan: `{networks: [{ssid, signal, secure, active}]}` |

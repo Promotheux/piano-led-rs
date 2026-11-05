@@ -11,14 +11,17 @@ mod color;
 mod config;
 mod hal;
 mod health;
+mod harmony;
 mod improv;
 mod keymap;
 mod midi;
 mod notes;
 mod player;
+mod recorder;
 mod render;
 mod rtpmidi;
 mod settings;
+mod stats;
 mod trainer;
 mod tls;
 mod web;
@@ -97,6 +100,9 @@ fn main() {
     let player = Arc::new(Player::new());
     let trainer = Arc::new(trainer::Trainer::new());
     let improv = Arc::new(improv::Improv::new());
+    let harmony = Arc::new(harmony::Harmony::new());
+    let recorder = Arc::new(recorder::Recorder::new(cfg.songs_dir.clone()));
+    let stats = Arc::new(stats::Stats::load(cfg.settings_path.as_ref().map(|p| p.with_file_name("stats.json"))));
     let _ = improv.command(improv::Command {
         lights: Some(initial.improv_lights),
         split: Some(initial.improv_split),
@@ -124,11 +130,11 @@ fn main() {
 
     let player_thread = {
         let (p, n, o, r, t, i) = (player.clone(), notes.clone(), midi_out.clone(), running.clone(), trainer.clone(), improv.clone());
-        let rtp = rtp_out.clone();
+        let (rtp, hm, st, rc) = (rtp_out.clone(), harmony.clone(), stats.clone(), recorder.clone());
         std::thread::Builder::new()
             .name("plv-player".into())
             .stack_size(128 * 1024)
-            .spawn(move || player::run(p, n, o, rtp, t, i, r))
+            .spawn(move || player::run(p, n, o, rtp, t, i, hm, st, rc, r))
             .unwrap_or_else(|e| fatal(&format!("spawn player thread: {e}")))
     };
 
@@ -143,6 +149,9 @@ fn main() {
         player: player.clone(),
         trainer,
         improv,
+        harmony,
+        stats,
+        recorder,
         health: health.clone(),
         songs_dir: cfg.songs_dir.clone(),
         ca_der: tls.as_ref().map(|t| t.ca_der.clone()),

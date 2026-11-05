@@ -22,7 +22,7 @@ const VELOCITY: u8 = 70;
 
 /// Chord shapes as semitones above the root; the UI names them in this
 /// order: major, minor, dim, aug, 7, maj7, m7, m7♭5, sus2, sus4, 5.
-const CHORDS: [&[u8]; 11] = [
+pub(crate) const CHORDS: [&[u8]; 11] = [
     &[0, 4, 7],
     &[0, 3, 7],
     &[0, 3, 6],
@@ -86,6 +86,8 @@ impl Scale {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Progression {
+    /// I–IV–V–I
+    Basic,
     /// I–V–vi–IV
     Pop,
     /// I–vi–IV–V
@@ -100,8 +102,9 @@ pub enum Progression {
 
 impl Progression {
     /// One chord per bar: (semitones above the key, chord shape).
-    fn bars(self) -> &'static [(u8, u8)] {
+    pub(crate) fn bars(self) -> &'static [(u8, u8)] {
         match self {
+            Progression::Basic => &[(0, MAJ), (5, MAJ), (7, MAJ), (0, MAJ)],
             Progression::Pop => &[(0, MAJ), (7, MAJ), (9, MIN), (5, MAJ)],
             Progression::Fifties => &[(0, MAJ), (9, MIN), (5, MAJ), (7, MAJ)],
             Progression::Jazz => &[(2, MIN7), (7, DOM7), (0, MAJ7), (0, MAJ7)],

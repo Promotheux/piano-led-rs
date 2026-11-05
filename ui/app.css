@@ -55,6 +55,12 @@ button:active { transform: scale(.97); }
 .time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .stage { flex: 1; min-height: 0; position: relative; }
 #roll { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.scorecard { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: grid; gap: 14px; justify-items: center;
+  padding: 22px 28px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.scorecard h3 { margin: 0; }
+.scorecard .tr-stats { grid-template-columns: repeat(4, auto); }
+#record.on { background: #ff6b6b; border-color: #ff6b6b; color: #fff; }
+#songs .best { color: var(--ok); font-size: 13px; white-space: nowrap; }
 .badge { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(109,139,255,.18);
   border: 1px solid var(--accent); color: #c9d4ff; padding: 6px 16px; border-radius: 999px; font-weight: 600; }
 .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
@@ -159,6 +165,13 @@ dialog h3 { margin: 0 0 12px; }
 .trainer .row { display: flex; gap: 12px; }
 .btn.toggle.on { background: var(--panel-2); border-color: var(--accent); color: var(--text); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* chord progressions */
+.hm-steps { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 0; min-height: 84px; }
+.hm-steps span { display: flex; flex-direction: column; align-items: center; min-width: 64px; padding: 8px 14px; border: 2px solid var(--line); border-radius: var(--radius); font-size: 32px; font-weight: 700; }
+.hm-steps small { font-size: 14px; font-weight: 400; color: var(--muted); }
+.hm-steps .now { border-color: var(--accent); }
+.hm-steps .right { color: var(--ok); }
+.hm-steps .missed { color: #ff6b6b; }
 .tr-stats { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 28px; margin: 0; }
 .tr-stats dt { color: var(--muted); grid-row: 1; }
 .tr-stats dd { margin: 0; font-size: 28px; font-weight: 650; grid-row: 2; }

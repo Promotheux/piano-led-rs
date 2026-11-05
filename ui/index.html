@@ -34,6 +34,7 @@
     <div class="toolbar">
       <input id="search" type="search" placeholder="Search songs…" autocomplete="off">
       <label class="btn">Upload .mid<input id="upload" type="file" accept=".mid,.midi,audio/midi" multiple hidden></label>
+      <button id="record" class="btn" aria-pressed="false" title="Record what you play to a new song in the library">● Record</button>
     </div>
     <ul id="songs" class="songlist"></ul>
   </section>
@@ -41,12 +42,22 @@
   <section id="player" class="view">
     <div class="songbar">
       <span id="title" class="title">No song loaded</span>
+      <span id="score" class="time" title="Notes you played that fit the song / that didn't"></span>
       <span id="time" class="time">0:00 / 0:00</span>
     </div>
     <div class="stage">
       <canvas id="roll"></canvas>
       <div id="waiting" class="badge" hidden>Waiting for you…</div>
       <div id="empty" class="empty">Pick a song in the Library to start.</div>
+      <div id="card" class="scorecard" role="dialog" aria-labelledby="card-title" hidden>
+        <h3 id="card-title">Song finished</h3>
+        <dl id="card-stats" class="tr-stats"></dl>
+        <p id="card-best" class="tr-keys"></p>
+        <div class="row">
+          <button id="card-close" class="btn">Close</button>
+          <button id="card-again" class="btn primary">Play again</button>
+        </div>
+      </div>
     </div>
     <div class="controls">
       <div class="row">
@@ -69,6 +80,10 @@
         <div class="seg small" id="loop">
           <button data-v="a">A</button><button data-v="b">B</button><button data-v="clear">✕</button>
         </div>
+        <button id="ramp" class="btn ghost toggle" aria-pressed="false" disabled
+          title="After each pass through the A–B loop without a wrong note, play 5% faster, up to 100%">Speed up</button>
+        <button id="metro" class="btn ghost toggle" aria-pressed="false" title="Click on every beat (on this tablet)">Metronome</button>
+        <button id="countin" class="btn ghost toggle" aria-pressed="false" title="Count one bar in before the song starts or resumes">Count-in</button>
         <div class="seg" id="view">
           <button data-v="waterfall">Waterfall</button>
           <button data-v="sheet">Sheet</button>
@@ -87,6 +102,7 @@
     <div class="app-grid">
       <button class="app-tile" data-open="trainer"><span class="app-icon">🎯</span><b>Pitch trainer</b><small>Name notes, intervals and chords by ear</small></button>
       <button class="app-tile" data-open="improv"><span class="app-icon">🎷</span><b>Improv</b><small>Jam over chords and see which notes fit</small></button>
+      <button class="app-tile" data-open="harmony"><span class="app-icon">🎼</span><b>Chord progressions</b><small>Play I–IV–V, ii–V–I and more in any key</small></button>
     </div>
   </section>
 
@@ -154,6 +170,36 @@
         <label class="tempo">Tempo <input id="im-tempo" type="range" min="40" max="200" step="5" value="80"><b id="im-tempoval">80</b></label>
       </div>
       <p class="tr-keys legend"><b class="sw chord"></b> chord notes, safe to land on &nbsp; <b class="sw scale"></b> scale notes, for passing</p>
+    </div>
+  </section>
+
+  <section id="harmony" class="view" data-tab="apps">
+    <button class="btn ghost back" data-open="apps">‹ Apps</button>
+    <div class="trainer">
+      <div class="seg" id="hm-prompt" aria-label="How it asks">
+        <button data-v="symbol">Read it</button>
+        <button data-v="sound">By ear</button>
+      </div>
+      <p id="hm-help" class="tr-prompt"></p>
+      <p id="hm-steps" class="hm-steps" aria-live="polite"></p>
+      <p id="hm-heard" class="tr-keys">&nbsp;</p>
+      <div class="row">
+        <button id="hm-start" class="btn primary">Start</button>
+        <button id="hm-replay" class="btn" disabled>Play again</button>
+      </div>
+      <div class="row wrap">
+        <label class="inline">Key <select id="hm-key"></select></label>
+        <div class="seg small" id="hm-prog" aria-label="Progression">
+          <button data-v="basic">I–IV–V–I</button><button data-v="pop">I–V–vi–IV</button><button data-v="fifties">I–vi–IV–V</button>
+          <button data-v="jazz">ii–V–I</button><button data-v="blues">12-bar blues</button><button data-v="minor">i–VI–III–VII</button>
+        </div>
+      </div>
+      <dl class="tr-stats">
+        <dt>Streak</dt><dd id="hm-streak">0</dd>
+        <dt>Best</dt><dd id="hm-best">0</dd>
+        <dt>Right</dt><dd id="hm-score">–</dd>
+      </dl>
+      <button id="hm-reset" class="btn ghost">Reset score</button>
     </div>
   </section>
 

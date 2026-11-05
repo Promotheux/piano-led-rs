@@ -108,6 +108,7 @@ function onLive() {
   uiVersion = live.ui;
   renderTrainer();
   renderImprov();
+  renderHarmony();
   // Another tablet (or this one) changed settings: reload them.
   if (settingsGen !== null && live.settings_gen !== settingsGen && !saveTimer) loadSettings();
   settingsGen = live.settings_gen;
@@ -116,6 +117,12 @@ function onLive() {
   $('#play').textContent = live.playing ? '⏸' : '▶';
   $('#play').setAttribute('aria-label', live.playing ? 'Pause' : 'Play');
   $('#waiting').hidden = !(live.playing && live.waiting);
+  const rec = live.record;
+  $('#record').classList.toggle('on', !!rec?.recording);
+  $('#record').setAttribute('aria-pressed', !!rec?.recording);
+  $('#record').textContent = rec?.recording ? `■ Stop ${fmt(rec.ms)} · ${rec.notes} notes` : '● Record';
+  $('#score').textContent = live.mode !== 'listen' && live.right + live.wrong ? `✓ ${live.right}  ✗ ${live.wrong}` : '';
+  showScorecard(live.result);
   $('#empty').hidden = !!live.song;
   setSeg('#mode', live.mode);
   setSeg('#hand', live.hand);
@@ -128,6 +135,12 @@ function onLive() {
   if (!scrubbing) scrub.value = Math.max(0, live.pos);
   $('#loop [data-v=a]').classList.toggle('on', loopA !== null || !!live.loop_ab);
   $('#loop [data-v=b]').classList.toggle('on', !!live.loop_ab);
+  $('#ramp').disabled = !live.loop_ab;
+  $('#countin').classList.toggle('on', live.count_in);
+  $('#countin').setAttribute('aria-pressed', live.count_in);
+  $('#ramp').classList.toggle('on', live.ramp);
+  $('#ramp').setAttribute('aria-pressed', live.ramp);
+  $('#ramp').textContent = live.ramp && live.loop_ab && live.mistakes ? `Speed up · ${live.mistakes} ✗` : 'Speed up';
   $$('#songs li').forEach((li) => li.classList.toggle('current', li.dataset.name === live.song));
 }
 
@@ -170,6 +183,17 @@ $$('#view button').forEach((b) =>
     save();
   })
 );
+$('#ramp').addEventListener('click', () => live && player({ ramp: !live.ramp }));
+$('#countin').addEventListener('click', () => {
+  ensureAudio();
+  if (live) player({ count_in: !live.count_in });
+});
+$('#metro').addEventListener('click', () => {
+  ensureAudio();
+  metronome = !metronome;
+  localStorage.setItem('metronome', metronome ? '1' : '');
+  showMetronome();
+});
 $$('#loop button').forEach((b) =>
   b.addEventListener('click', () => {
     const pos = displayPos();
@@ -217,10 +241,39 @@ function renderTracks() {
 }
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// ---------- scorecard ----------
+// Pops up when a run from the start reaches the end; the Pi keeps the records.
+let resultSeen; // JSON of the last result shown (undefined until the first update)
+async function showScorecard(r) {
+  const key = JSON.stringify(r);
+  if (resultSeen === undefined || key === resultSeen) return void (resultSeen = key); // don't pop up old results on load
+  resultSeen = key;
+  if (!r) return void ($('#card').hidden = true);
+  const sec = Math.round(r.waited_ms / 1000);
+  $('#card-stats').innerHTML =
+    `<dt>Right</dt><dd>${r.right}</dd><dt>Wrong</dt><dd>${r.wrong}</dd>` +
+    `<dt>Accuracy</dt><dd>${r.accuracy}%</dd><dt>Waited</dt><dd>${sec < 60 ? sec + ' s' : fmt(r.waited_ms)}</dd>`;
+  $('#card-best').textContent = `At ${r.tempo}% tempo.`;
+  $('#card').hidden = false;
+  try {
+    stats = await api('/api/stats');
+    const best = stats[live.song];
+    if (best) $('#card-best').textContent = `At ${r.tempo}% tempo. Your best: ${best.best_tempo}% tempo, ${best.best_accuracy}% right, finished ${best.finished}×.`;
+    renderSongs();
+  } catch {}
+}
+$('#card-close').addEventListener('click', () => ($('#card').hidden = true));
+$('#card-again').addEventListener('click', () => {
+  $('#card').hidden = true;
+  player({ seek: -2000, playing: true });
+});
+
 // ---------- library ----------
+let stats = {}; // song name -> { finished, best_tempo, best_accuracy }
 async function loadSongs() {
   try {
     songs = (await api('/api/songs')).songs;
+    stats = await api('/api/stats').catch(() => ({}));
     renderSongs();
   } catch (e) {
     toast(e.message, true);
@@ -235,7 +288,8 @@ function renderSongs() {
     const li = document.createElement('li');
     li.dataset.name = s.name;
     li.classList.toggle('current', live && live.song === s.name);
-    li.innerHTML = `<span class="name">${escapeHtml(prettyName(s.name))}</span><span class="size">${Math.max(1, Math.round(s.size / 1024))} KB</span>` +
+    li.innerHTML = `<span class="name">${escapeHtml(prettyName(s.name))}</span>${stats[s.name] ? `<span class="best" title="Best tempo you finished it at">★ ${stats[s.name].best_tempo}%</span>` : ''}` +
+      `<span class="size">${Math.max(1, Math.round(s.size / 1024))} KB</span>` +
       `<button class="icon-btn del" aria-label="Delete ${escapeHtml(prettyName(s.name))}">🗑</button>`;
     li.addEventListener('click', async () => {
       await player({ song: s.name });
@@ -256,6 +310,19 @@ function renderSongs() {
   }
 }
 $('#search').addEventListener('input', renderSongs);
+$('#record').addEventListener('click', async () => {
+  if (!live) return;
+  try {
+    const r = await post('/api/record', { recording: !live.record.recording });
+    if (r.recording) toast('Recording: play away, tap Stop when done');
+    else if (r.saved) {
+      toast(`Saved as "${prettyName(r.saved)}"`);
+      loadSongs();
+    } else toast('Nothing was played, so nothing was saved');
+  } catch (e) {
+    toast(e.message, true);
+  }
+});
 $('#upload').addEventListener('change', async (e) => {
   for (const f of e.target.files) {
     try {
@@ -470,8 +537,65 @@ function firstFrom(t) {
   return lo;
 }
 
+// ---------- metronome ----------
+// Clicks come from this tablet (Web Audio), on the song's beats as the clock
+// passes them: not every instrument has a drum sound to play over MIDI.
+let metronome = localStorage.getItem('metronome') === '1';
+let audio = null;
+let clickedTo = null; // song time up to which clicks are scheduled
+function ensureAudio() {
+  // Browsers only allow sound after a tap.
+  audio ??= new (window.AudioContext || window.webkitAudioContext)();
+  if (audio.state === 'suspended') audio.resume();
+}
+document.addEventListener('pointerdown', () => (metronome || live?.count_in) && ensureAudio());
+function showMetronome() {
+  $('#metro').classList.toggle('on', metronome);
+  $('#metro').setAttribute('aria-pressed', metronome);
+}
+showMetronome();
+function click(when, accent) {
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.frequency.value = accent ? 1600 : 1000;
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(accent ? 0.6 : 0.3, when + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+  o.connect(g).connect(audio.destination);
+  o.start(when);
+  o.stop(when + 0.06);
+}
+// Beat times, with the first beat's spacing carried back into the lead-in.
+function clickTimes() {
+  if (song.clicks) return song.clicks;
+  const beats = song.beats || [];
+  const step = beats.length > 1 ? beats[1] - beats[0] : 500;
+  const lead = [];
+  for (let t = (beats[0] ?? 0) - step; t >= -2000; t -= step) lead.unshift(t);
+  song.accents = new Set(song.bars || []);
+  return (song.clicks = [...lead, ...beats]);
+}
+function tickMetronome() {
+  if (!audio || !song || !live || !live.playing) return void (clickedTo = null);
+  if (live.waiting) return; // the song stands still: so does the beat
+  const counting = live.count_in && (displayPos() < 0 || live.count_until !== null);
+  if (!metronome && !counting) return void (clickedTo = null);
+  const pos = displayPos();
+  if (clickedTo === null || pos < clickedTo - 200) clickedTo = pos; // started, or jumped back
+  const speed = live.tempo / 100;
+  const until = pos + 120 * speed; // schedule a little ahead of the frame clock
+  for (const t of clickTimes()) {
+    if (t <= clickedTo) continue;
+    if (t > until) break;
+    const countIn = t < 0 || (live.count_until !== null && t < live.count_until);
+    if (metronome || countIn) click(audio.currentTime + Math.max(0, (t - pos) / speed / 1000), song.accents.has(t));
+  }
+  clickedTo = until;
+}
+
 function draw() {
   requestAnimationFrame(draw);
+  tickMetronome();
   if (!W || !$('#player').classList.contains('active')) return;
   ctx.clearRect(0, 0, W, H);
   const pos = displayPos();
@@ -978,6 +1102,62 @@ form.improv_split.innerHTML = Array.from({ length: 49 }, (_, i) => 36 + i)
 $('#im-key').addEventListener('change', (e) => improv({ key: Number(e.target.value) }));
 $('#im-tempo').addEventListener('input', (e) => ($('#im-tempoval').textContent = e.target.value));
 $('#im-tempo').addEventListener('change', (e) => improv({ tempo: Number(e.target.value) }));
+// ---------- chord progressions ----------
+// The Pi names (or plays) the progression and judges the chords you hold;
+// the tablet shows the numerals and how you did on each.
+const harmony = (cmd) => post('/api/harmony', cmd).catch((e) => toast(e.message, true));
+const ROMAN = ['I', '♭II', 'II', '♭III', 'III', 'IV', '♯IV', 'V', '♭VI', 'VI', '♭VII', 'VII'];
+// A step [semitones above the key, shape] as a Roman numeral. In a minor key
+// III, VI and VII are the scale's own chords, so they lose the flat.
+function numeral([deg, shape], minor) {
+  let r = minor && [3, 8, 10].includes(deg) ? ROMAN[deg].slice(1) : ROMAN[deg];
+  if ([1, 2, 6, 7].includes(shape)) r = r.toLowerCase(); // minor and diminished
+  return r + ({ 2: '°', 3: '+', 4: '7', 5: 'maj7', 6: '7', 7: 'ø7' }[shape] || '');
+}
+$('#hm-key').innerHTML =
+  KEY_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('') + '<option value="r">Random</option>';
+function renderHarmony() {
+  const m = live.harmony;
+  if (!m) return;
+  setSeg('#hm-prompt', m.prompt);
+  setSeg('#hm-prog', m.progression);
+  if (document.activeElement !== $('#hm-key')) $('#hm-key').value = m.random_key ? 'r' : m.key;
+  const minor = m.progression === 'minor';
+  const done = m.step >= m.steps.length;
+  $('#hm-start').textContent = m.active ? 'Stop' : 'Start';
+  $('#hm-replay').disabled = !m.active || m.playing;
+  $('#hm-help').textContent = !m.active
+    ? 'Play each chord in any voicing or inversion. Root and quality count, not the exact notes.'
+    : m.playing
+      ? 'Listen…'
+      : done
+        ? 'Well done. Next one coming…'
+        : `In ${KEY_NAMES[m.key]} ${minor ? 'minor' : 'major'}: play the highlighted chord.`;
+  $('#hm-steps').innerHTML = !m.active
+    ? ''
+    : m.steps
+        .map((st, i) => {
+          const mark = m.marks[i];
+          const hidden = m.prompt === 'sound' && mark === 'open'; // by ear: no numerals until you get them
+          const name = mark === 'open' ? '&nbsp;' : chordName([(m.key + st[0]) % 12, st[1]]);
+          return `<span class="${mark}${i === m.step && !m.playing ? ' now' : ''}">${hidden ? '?' : numeral(st, minor)}<small>${name}</small></span>`;
+        })
+        .join('');
+  $('#hm-heard').textContent = m.active && m.heard ? `You're playing ${chordName(m.heard)}` : ' ';
+  $('#hm-streak').textContent = m.streak;
+  $('#hm-best').textContent = m.best;
+  $('#hm-score').textContent = m.total ? `${m.right}/${m.total} (${Math.round((100 * m.right) / m.total)}%)` : '–';
+}
+$('#hm-start').addEventListener('click', () => live && harmony({ active: !live.harmony.active }));
+$('#hm-replay').addEventListener('click', () => harmony({ replay: true }));
+$('#hm-reset').addEventListener('click', () => harmony({ reset: true }));
+$('#hm-key').addEventListener('change', (e) =>
+  harmony(e.target.value === 'r' ? { random_key: true } : { random_key: false, key: Number(e.target.value) }),
+);
+for (const [sel, field] of [['#hm-prompt', 'prompt'], ['#hm-prog', 'progression']]) {
+  $(sel).addEventListener('click', (e) => e.target.dataset.v && harmony({ [field]: e.target.dataset.v }));
+}
+
 for (const [sel, field] of [['#im-source', 'source'], ['#im-scale', 'scale'], ['#im-prog', 'progression']]) {
   $(sel).addEventListener('click', (e) => e.target.dataset.v && improv({ [field]: e.target.dataset.v }));
 }

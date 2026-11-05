@@ -19,7 +19,10 @@ use crate::health::{self, Health};
 use crate::midi;
 use crate::notes::NoteState;
 use crate::player::{self, Command, Player, Status};
+use crate::harmony::{self, Harmony};
 use crate::improv::{self, Improv};
+use crate::recorder::{self, Recorder};
+use crate::stats::Stats;
 use crate::trainer::{self, Trainer};
 use crate::settings::{Settings, SettingsStore};
 use crate::wifi;
@@ -57,6 +60,9 @@ pub struct App {
     pub player: Arc<Player>,
     pub trainer: Arc<Trainer>,
     pub improv: Arc<Improv>,
+    pub harmony: Arc<Harmony>,
+    pub stats: Arc<Stats>,
+    pub recorder: Arc<Recorder>,
     pub health: Arc<Health>,
     pub songs_dir: PathBuf,
     /// Local CA certificate (DER) to install on tablets, when HTTPS is on.
@@ -133,6 +139,10 @@ fn handle(app: &Arc<App>, mut req: Request) {
         (Method::Post, "/api/trainer") => post_trainer(app, &mut req),
         (Method::Get, "/api/improv") => json(&app.improv.status()),
         (Method::Post, "/api/improv") => post_improv(app, &mut req),
+        (Method::Get, "/api/harmony") => json(&app.harmony.status()),
+        (Method::Get, "/api/stats") => json(&app.stats.all()),
+        (Method::Post, "/api/record") => post_record(app, &mut req),
+        (Method::Post, "/api/harmony") => post_harmony(app, &mut req),
         (Method::Post, "/api/player") => post_player(app, &mut req),
         (Method::Get, "/api/player/song") => match app.player.song_json() {
             Some(s) => Response::from_string(s).with_header(header("Content-Type", "application/json")),
@@ -261,10 +271,9 @@ fn post_player(app: &App, req: &mut Request) -> Resp {
         };
         app.player.load(name, song);
     }
-    // Starting a song ends the trainer and improv: they share the instrument.
+    // Starting a song ends the apps: they share the instrument.
     if r.cmd.playing == Some(true) {
-        let _ = app.trainer.command(trainer::Command { active: Some(false), ..Default::default() });
-        let _ = app.improv.command(improv::Command { active: Some(false), ..Default::default() });
+        stop_apps(app);
     }
     match app.player.command(r.cmd) {
         Ok(()) => json(&app.player.status()),
@@ -282,8 +291,7 @@ fn post_trainer(app: &App, req: &mut Request) -> Resp {
         Err(e) => return error(400, &e.to_string()),
     };
     if c.active == Some(true) {
-        let _ = app.player.command(Command { playing: Some(false), ..Default::default() });
-        let _ = app.improv.command(improv::Command { active: Some(false), ..Default::default() });
+        stop_apps(app);
     }
     match app.trainer.command(c) {
         Ok(()) => json(&app.trainer.status()),
@@ -301,13 +309,64 @@ fn post_improv(app: &App, req: &mut Request) -> Resp {
         Err(e) => return error(400, &e.to_string()),
     };
     if c.active == Some(true) {
-        let _ = app.player.command(Command { playing: Some(false), ..Default::default() });
-        let _ = app.trainer.command(trainer::Command { active: Some(false), ..Default::default() });
+        stop_apps(app);
     }
     match app.improv.command(c) {
         Ok(()) => json(&app.improv.status()),
         Err(e) => error(400, &e),
     }
+}
+
+fn post_harmony(app: &App, req: &mut Request) -> Resp {
+    let body = match read_body(req, MAX_JSON) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let c: harmony::Command = match serde_json::from_slice(&body) {
+        Ok(c) => c,
+        Err(e) => return error(400, &e.to_string()),
+    };
+    if c.active == Some(true) {
+        stop_apps(app);
+    }
+    match app.harmony.command(c) {
+        Ok(()) => json(&app.harmony.status()),
+        Err(e) => error(400, &e),
+    }
+}
+
+#[derive(Deserialize)]
+struct RecordRequest {
+    recording: bool,
+}
+
+/// Starts or stops recording; stopping saves a new song and returns its name.
+fn post_record(app: &App, req: &mut Request) -> Resp {
+    let body = match read_body(req, MAX_JSON) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let r: RecordRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return error(400, &e.to_string()),
+    };
+    if r.recording {
+        app.recorder.start();
+        return json(&serde_json::json!({ "recording": true }));
+    }
+    match app.recorder.stop() {
+        Ok(saved) => json(&serde_json::json!({ "recording": false, "saved": saved })),
+        Err(e) => error(500, &e),
+    }
+}
+
+/// The song and the apps share the instrument and the LEDs: one at a time.
+/// Called before starting one of them (which then switches itself on).
+fn stop_apps(app: &App) {
+    let _ = app.player.command(Command { playing: Some(false), ..Default::default() });
+    let _ = app.trainer.command(trainer::Command { active: Some(false), ..Default::default() });
+    let _ = app.improv.command(improv::Command { active: Some(false), ..Default::default() });
+    let _ = app.harmony.command(harmony::Command { active: Some(false), ..Default::default() });
 }
 
 /// Maps a client-supplied file name into the songs folder, refusing anything
@@ -365,7 +424,10 @@ fn delete_song(app: &App, query: &str) -> Resp {
         return error(400, "invalid song name");
     };
     match std::fs::remove_file(&path) {
-        Ok(()) => json(&serde_json::json!({ "deleted": name })),
+        Ok(()) => {
+            app.stats.remove(&name);
+            json(&serde_json::json!({ "deleted": name }))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => error(404, "no such song"),
         Err(e) => error(500, &format!("delete failed: {e}")),
     }
@@ -432,6 +494,8 @@ struct Live {
     held: Vec<u8>,
     trainer: trainer::Status,
     improv: improv::Status,
+    harmony: harmony::Status,
+    record: recorder::Status,
     /// Bumps on every settings change, so open tablets reload them.
     settings_gen: u32,
     health: health::Snapshot,
@@ -464,6 +528,8 @@ fn websocket(app: &Arc<App>, req: Request) {
                     held: (0u8..128).filter(|&k| app.notes.held(k as usize) != 0).collect(),
                     trainer: app.trainer.status(),
                     improv: app.improv.status(),
+                    harmony: app.harmony.status(),
+                    record: app.recorder.status(),
                     settings_gen: app.settings.generation(),
                     health: app.health.snapshot(),
                     ui: ui_version(),

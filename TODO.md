@@ -33,16 +33,16 @@ Prioritized: work top to bottom. Tick items off as they land.
     in a chosen key and tempo.
   - Current chord's tones bright (safe to land on), the rest of the scale dim
     (passing notes), everything else dark; or a pentatonic-only setting.
-- [ ] **Harmonic ear training & chord progressions**: the app prompts a Roman
-      numeral progression (e.g. ii–V–I in G major) by sound or symbol; you play
-      the chords in any voicing, and it scores the harmony (right chord
-      function and quality) rather than exact notes.
-- [ ] **Smart loop practice**: A–B loop that raises the tempo automatically after
-      each clean pass (e.g. 60% → 100% in 5% steps).
-- [ ] **Metronome and count-in** for Play-along mode.
-- [ ] **Session scorecards & statistics**: right/wrong notes, waiting time, best
-      tempo per song.
-- [ ] **Record your playing** to a MIDI file in the library.
+- [x] **Chord progressions** (Apps): I–IV–V–I, ii–V–I, 12-bar blues and more,
+      read as Roman numerals or by ear, in a set or random key; any voicing
+      counts, scored on root and quality.
+- [x] **Smart loop practice**: "Speed up" raises the tempo 5% after each A–B
+      pass without a wrong note, up to 100%.
+- [x] **Metronome and count-in**: clicks from the tablet on the song's beats;
+      count-in replays the bar before silently.
+- [x] **Session scorecards & statistics**: right/wrong notes and waiting time
+      per run; best tempo and accuracy per song in the Library.
+- [x] **Record your playing** to a MIDI file in the library (keys and pedal).
 
 ## Phase 3: Sheet music & frontend polish
 

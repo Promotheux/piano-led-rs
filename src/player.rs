@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::midi::MidiOut;
 use crate::rtpmidi::RtpOut;
+use crate::harmony::Harmony;
+use crate::recorder::Recorder;
+use crate::stats::Stats;
 use crate::improv::Improv;
 use crate::trainer::Trainer;
 use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_REQUIRED, HINT_RIGHT};
@@ -26,6 +29,11 @@ const LEAD_IN_MS: f64 = 2000.0;
 /// A press up to this long (song time) before a note counts for it, and keys
 /// to play light up this early, so slightly early playing is judged right.
 const EARLY_MS: f64 = 250.0;
+/// Smart loop: a press with no practised note on that key this close (song
+/// time) is a wrong note, and spoils the pass.
+const WRONG_NOTE_MS: f64 = 500.0;
+/// Smart loop: tempo step after a clean pass, up to full speed.
+const RAMP_STEP: u16 = 5;
 /// A hand whose next note is further away than this gets no preview (and
 /// the search stays cheap).
 const PREVIEW_HORIZON_MS: f64 = 10_000.0;
@@ -94,6 +102,9 @@ pub struct Song {
     pub pedal: Vec<(u32, u8)>,
     /// Bar line times in ms, from the time signature (4/4 if none).
     pub bars: Vec<u32>,
+    /// Beat times in ms (the time signature's unit: quarters in 4/4), for the
+    /// tablet's metronome.
+    pub beats: Vec<u32>,
     pub track_names: Vec<String>,
     pub len_ms: u32,
     max_dur: u32,
@@ -141,6 +152,9 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
     let mut bars = Vec::new();
     let mut bar_ticks = (tpb * 4.0) as u64;
     let mut next_bar = 0u64;
+    let mut beats = Vec::new();
+    let mut beat_ticks = tpb as u64;
+    let mut next_beat = 0u64;
     let metrical = fixed_ms_per_tick.is_none();
     // Open notes per (track, channel, key): start ms, velocity, start tick.
     let mut open: HashMap<(u8, u8, u8), Vec<(f64, u8, u64)>> = HashMap::new();
@@ -162,6 +176,10 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
             bars.push((ms + (next_bar - last_tick) as f64 * tempo_us / tpb / 1000.0) as u32);
             next_bar += bar_ticks;
         }
+        while metrical && next_beat <= tick && beat_ticks > 0 {
+            beats.push((ms + (next_beat - last_tick) as f64 * tempo_us / tpb / 1000.0) as u32);
+            next_beat += beat_ticks;
+        }
         let dt = (tick - last_tick) as f64;
         ms += fixed_ms_per_tick.map_or(dt * tempo_us / tpb / 1000.0, |m| dt * m);
         last_tick = tick;
@@ -170,6 +188,11 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
             TrackEventKind::Meta(MetaMessage::TimeSignature(num, den_pow, ..)) => {
                 // A new signature starts a new bar here.
                 bar_ticks = (tpb * 4.0 * num as f64 / f64::from(1u32 << den_pow.min(6))) as u64;
+                beat_ticks = (tpb * 4.0 / f64::from(1u32 << den_pow.min(6))) as u64;
+                next_beat = tick + beat_ticks;
+                if beats.last() != Some(&(ms as u32)) {
+                    beats.push(ms as u32);
+                }
                 if bars.last() != Some(&(ms as u32)) {
                     bars.push(ms as u32);
                 }
@@ -213,7 +236,26 @@ pub fn parse(bytes: &[u8]) -> Result<Song, String> {
     let len_ms = notes.iter().map(|n| n.t + n.dur).max().unwrap_or(0);
     let max_dur = notes.iter().map(|n| n.dur).max().unwrap_or(0);
     bars.dedup();
-    Ok(Song { notes, pedal, bars, track_names: names, len_ms, max_dur })
+    beats.dedup();
+    Ok(Song { notes, pedal, bars, beats, track_names: names, len_ms, max_dur })
+}
+
+/// Milliseconds since `last`, which moves to now.
+fn dt_rec(last: &mut Instant) -> f64 {
+    let now = Instant::now();
+    let dt = (now - *last).as_secs_f64() * 1000.0;
+    *last = now;
+    dt
+}
+
+/// Length of the bar around song time `t` in ms (2 s without bar lines).
+fn bar_len(bars: &[u32], t: f64) -> f64 {
+    let i = bars.partition_point(|&b| (b as f64) <= t);
+    match (i.checked_sub(1).and_then(|j| bars.get(j)), bars.get(i)) {
+        (Some(&a), Some(&b)) => (b - a) as f64,
+        _ if bars.len() >= 2 => (bars[bars.len() - 1] - bars[bars.len() - 2]) as f64,
+        _ => 2000.0,
+    }
 }
 
 /// What a track contributes. At most one track plays each hand.
@@ -259,6 +301,17 @@ pub fn default_track_roles(song: &Song) -> Vec<TrackRole> {
         .collect()
 }
 
+/// How a run through the whole song went (practice modes only).
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+pub struct RunResult {
+    pub right: u32,
+    pub wrong: u32,
+    pub waited_ms: u32,
+    pub tempo: u16,
+    /// Right notes as a share of all notes you played, in %.
+    pub accuracy: u8,
+}
+
 #[derive(Serialize)]
 pub struct Status {
     pub song: Option<String>,
@@ -270,6 +323,21 @@ pub struct Status {
     pub hand: Practise,
     pub tempo: u16,
     pub loop_ab: Option<[i64; 2]>,
+    /// Smart loop: speed up after each clean pass through the loop.
+    pub ramp: bool,
+    /// Wrong notes in the current pass.
+    pub mistakes: u16,
+    /// Count in one bar when playback starts mid-song.
+    pub count_in: bool,
+    /// While counting in: the song time where you come in.
+    pub count_until: Option<i64>,
+    /// This run so far: notes you played that fit the song, and that didn't.
+    pub right: u32,
+    pub wrong: u32,
+    /// Time the song stood still waiting for you (wait mode).
+    pub waited_ms: u32,
+    /// Set when a run from the start reaches the end.
+    pub result: Option<RunResult>,
     /// While waiting: keys of the chord already played (they stay satisfied).
     pub done: Vec<u8>,
 }
@@ -285,6 +353,8 @@ pub struct Command {
     pub seek: Option<f64>,
     /// `[a, b]` in ms to loop, `[]` to clear.
     pub loop_ab: Option<Vec<f64>>,
+    pub ramp: Option<bool>,
+    pub count_in: Option<bool>,
     pub track_roles: Option<Vec<TrackRole>>,
     /// Widest stretch of one hand in semitones; 0 disables the filter.
     pub reach: Option<u8>,
@@ -301,6 +371,19 @@ struct State {
     waiting: bool,
     pos: f64,
     loop_ab: Option<(f64, f64)>,
+    ramp: bool,
+    mistakes: u16,
+    count_in: bool,
+    /// Counting in: the bar before this song time plays silently.
+    quiet_until: Option<f64>,
+    right: u32,
+    wrong: u32,
+    waited_ms: f64,
+    /// This run started at the beginning, without a loop: it can finish.
+    full_run: bool,
+    result: Option<RunResult>,
+    /// `result` is new and not yet in the stats file.
+    unsaved: bool,
     reach: u8,
     /// Per note: out of reach for one hand, so the instrument plays it.
     unreachable: Vec<bool>,
@@ -414,6 +497,21 @@ impl State {
             .collect()
     }
 
+    /// Starts counting a fresh run from the beginning.
+    fn new_run(&mut self) {
+        (self.right, self.wrong, self.waited_ms) = (0, 0, 0.0);
+        self.full_run = self.loop_ab.is_none();
+        self.result = None;
+    }
+
+    /// Whether a press of `k` now fits a practised note.
+    fn expected(&self, song: &Song, k: u8) -> bool {
+        let from = song.notes.partition_point(|n| (n.t as f64) < self.pos - WRONG_NOTE_MS);
+        (from..song.notes.len())
+            .take_while(|&i| (song.notes[i].t as f64) <= self.pos + WRONG_NOTE_MS)
+            .any(|i| song.notes[i].key == k && self.practised(i))
+    }
+
     /// Whether key `k` has an unused press made at or after song time `since`.
     fn played(&self, k: u8, since: f64) -> bool {
         let k = k as usize;
@@ -441,10 +539,21 @@ impl State {
             if p != self.seen[k] {
                 self.seen[k] = p;
                 self.pressed_at[k] = self.pos;
+                if self.mode != Mode::Listen {
+                    if self.expected(&song, k as u8) {
+                        self.right += 1;
+                    } else {
+                        self.wrong += 1;
+                        if self.ramp && self.loop_ab.is_some() {
+                            self.mistakes = self.mistakes.saturating_add(1);
+                        }
+                    }
+                }
             }
         }
         let mut next = self.pos + dt * self.tempo as f64 / 100.0;
         self.waiting = false;
+        let quiet = self.quiet_until.unwrap_or(f64::NEG_INFINITY);
 
         if self.mode == Mode::Wait {
             // Stop just before the first chord in range whose keys aren't all down.
@@ -454,7 +563,7 @@ impl State {
                 if n.t as f64 > next {
                     break;
                 }
-                if !self.practised(i) || self.accepted_until.is_some_and(|c| n.t <= c) {
+                if !self.practised(i) || (n.t as f64) < quiet || self.accepted_until.is_some_and(|c| n.t <= c) {
                     continue;
                 }
                 let chord_end = n.t + CHORD_MS;
@@ -485,6 +594,7 @@ impl State {
 
         if self.waiting {
             self.wait_ms += dt;
+            self.waited_ms += dt;
         } else {
             self.wait_ms = 0.0;
             self.blink = [false; 128];
@@ -501,7 +611,7 @@ impl State {
             if t > next {
                 break;
             }
-            if self.practised(i) || self.ignored(n) {
+            if self.practised(i) || self.ignored(n) || t < quiet {
                 continue;
             }
             let end = t + n.dur as f64;
@@ -543,16 +653,34 @@ impl State {
             out([0xb0, 64, 0]);
         }
         self.pos = next;
+        if self.pos >= quiet {
+            self.quiet_until = None;
+        }
 
         if let Some((a, b)) = self.loop_ab {
             if self.pos >= b {
                 self.pos = a;
                 self.flush = true; // next tick: release keys, chords count afresh
+                if self.ramp && self.mistakes == 0 && self.mode != Mode::Listen {
+                    self.tempo = (self.tempo + RAMP_STEP).min(100).max(self.tempo);
+                }
+                self.mistakes = 0;
             }
         }
         if self.pos > song.len_ms as f64 + 1000.0 {
             self.playing = false;
             self.all_off(out);
+            if std::mem::take(&mut self.full_run) && self.mode != Mode::Listen {
+                let played = self.right + self.wrong;
+                self.result = Some(RunResult {
+                    right: self.right,
+                    wrong: self.wrong,
+                    waited_ms: self.waited_ms as u32,
+                    tempo: self.tempo,
+                    accuracy: if played == 0 { 0 } else { (self.right * 100 / played) as u8 },
+                });
+                self.unsaved = true;
+            }
         }
     }
 
@@ -580,7 +708,7 @@ impl State {
         for i in first..song.notes.len() {
             let n = &song.notes[i];
             let t = n.t as f64;
-            if self.ignored(n) {
+            if self.ignored(n) || self.quiet_until.is_some_and(|q| t < q) {
                 continue;
             }
             let hand = if self.hand_of(n) == Hand::Right { HINT_RIGHT } else { HINT_LEFT };
@@ -637,6 +765,16 @@ impl Player {
                 waiting: false,
                 pos: -LEAD_IN_MS,
                 loop_ab: None,
+                ramp: false,
+                mistakes: 0,
+                count_in: false,
+                quiet_until: None,
+                right: 0,
+                wrong: 0,
+                waited_ms: 0.0,
+                full_run: false,
+                result: None,
+                unsaved: false,
                 reach: DEFAULT_REACH,
                 unreachable: Vec::new(),
                 flush: false,
@@ -662,6 +800,7 @@ impl Player {
         s.flush = true;
         s.pos = -LEAD_IN_MS;
         s.loop_ab = None;
+        s.new_run();
         s.update_reach();
     }
 
@@ -691,6 +830,13 @@ impl Player {
         if let Some(p) = c.seek {
             s.pos = p.clamp(-LEAD_IN_MS, len);
             s.flush = true;
+            s.quiet_until = None;
+            // Back to the start begins a new run; any other jump spoils it.
+            if s.pos <= 0.0 {
+                s.new_run();
+            } else {
+                s.full_run = false;
+            }
         }
         if let Some(ab) = c.loop_ab {
             s.loop_ab = match ab[..] {
@@ -698,11 +844,35 @@ impl Player {
                 [] => None,
                 _ => return Err("loop_ab must be [a, b] with a < b, or []".into()),
             };
+            s.mistakes = 0;
+            if s.loop_ab.is_some() {
+                s.full_run = false;
+            }
+        }
+        if let Some(r) = c.ramp {
+            s.ramp = r;
+            s.mistakes = 0;
+        }
+        if let Some(x) = c.count_in {
+            s.count_in = x;
         }
         if let Some(p) = c.playing {
             let start = p && !s.playing;
             s.playing = p && s.song.is_some();
             s.flush |= start;
+            if start && s.pos <= 0.0 && s.loop_ab.is_none() {
+                s.new_run();
+            }
+            // Count in: go back a bar and play it silently. From the very start
+            // the lead-in is the count-in already.
+            if start && s.playing && s.count_in && s.pos >= 0.0 {
+                let bar = s.song.as_ref().map_or(2000.0, |song| bar_len(&song.bars, s.pos));
+                s.quiet_until = Some(s.pos);
+                s.pos = (s.pos - bar).max(-LEAD_IN_MS);
+            }
+            if !p {
+                s.quiet_until = None;
+            }
         }
         Ok(())
     }
@@ -719,6 +889,14 @@ impl Player {
             hand: s.practise,
             tempo: s.tempo,
             loop_ab: s.loop_ab.map(|(a, b)| [a as i64, b as i64]),
+            ramp: s.ramp,
+            mistakes: s.mistakes,
+            count_in: s.count_in,
+            count_until: s.quiet_until.map(|q| q as i64),
+            right: s.right,
+            wrong: s.wrong,
+            waited_ms: s.waited_ms as u32,
+            result: s.result,
             done: s.chord_done(),
         }
     }
@@ -739,6 +917,7 @@ impl Player {
             /// `[t, dur, key, hand(0=R,1=L), out_of_reach(0/1), note_value]`
             notes: Vec<(u32, u32, u8, u8, u8, u8)>,
             bars: &'a [u32],
+            beats: &'a [u32],
         }
         let s = self.state.lock().unwrap();
         let song = s.song.as_ref()?;
@@ -768,6 +947,7 @@ impl Player {
                 })
                 .collect(),
             bars: &song.bars,
+            beats: &song.beats,
         };
         serde_json::to_string(&view).ok()
     }
@@ -781,11 +961,16 @@ pub fn run(
     rtp: Option<Arc<RtpOut>>,
     trainer: Arc<Trainer>,
     improv: Arc<Improv>,
+    harmony: Arc<Harmony>,
+    stats: Arc<Stats>,
+    recorder: Arc<Recorder>,
     running: Arc<AtomicBool>,
 ) {
     let mut last = Instant::now();
+    let mut rec_last = Instant::now();
     let mut shown = [0u8; 128];
     while running.load(Ordering::Relaxed) {
+        let mut finished = None;
         let (hints, playing) = {
             let mut s = player.state.lock().unwrap();
             let now = Instant::now();
@@ -804,12 +989,18 @@ pub fn run(
                 }
             };
             s.tick(dt, |k| notes.presses(k as usize), &mut send);
+            if std::mem::take(&mut s.unsaved) {
+                if let (Some(name), Some(r)) = (s.name.clone(), s.result) {
+                    finished = Some((name, r));
+                }
+            }
             // The pitch trainer and improv mode share the instrument and the
             // LEDs; while one is on the song is paused (see web.rs) and its
             // hints win. Improv doesn't judge keys: no green/red.
             let trained = trainer.tick(dt, |k| notes.presses(k as usize), &mut send);
             let improvised = improv.tick(dt, |k| notes.held(k as usize) != 0, &mut send);
-            match trained.map(|h| (h, true)).or(improvised.map(|h| (h, false))) {
+            let harmonised = harmony.tick(dt, |k| notes.held(k as usize) != 0, &mut send);
+            match trained.map(|h| (h, true)).or(harmonised.map(|h| (h, false))).or(improvised.map(|h| (h, false))) {
                 Some((h, judge)) => {
                     notes.set_practice(judge);
                     notes.set_playing(true);
@@ -828,7 +1019,15 @@ pub fn run(
                 *old = new;
             }
         }
-        std::thread::sleep(Duration::from_millis(if playing { 3 } else { 30 }));
+        let recording = recorder.recording();
+        if recording {
+            recorder.tick(dt_rec(&mut rec_last), &notes);
+        }
+        // Saved outside the player lock: it writes a file.
+        if let Some((name, r)) = finished {
+            stats.record(&name, r.tempo, r.accuracy);
+        }
+        std::thread::sleep(Duration::from_millis(if playing || recording { 3 } else { 30 }));
     }
     let mut s = player.state.lock().unwrap();
     let mut o = out.lock().unwrap();
@@ -855,7 +1054,7 @@ mod tests {
         notes.sort_by_key(|n| (n.t, n.key)); // same invariant as `parse`
         let len_ms = notes.iter().map(|n| n.t + n.dur).max().unwrap();
         let max_dur = notes.iter().map(|n| n.dur).max().unwrap();
-        Song { notes, pedal: vec![(0, 127), (150, 0)], bars: vec![], track_names: vec!["R".into(), "L".into()], len_ms, max_dur }
+        Song { notes, pedal: vec![(0, 127), (150, 0)], bars: vec![], beats: vec![], track_names: vec!["R".into(), "L".into()], len_ms, max_dur }
     }
 
     fn player_with(s: Song, mode: Mode) -> Player {
@@ -1156,6 +1355,60 @@ mod tests {
     }
 
     #[test]
+    fn smart_loop_speeds_up_after_clean_passes_only() {
+        let p = player_with(song(&[(200, 100, 72, 0)]), Mode::Wait);
+        let c = Command { loop_ab: Some(vec![0.0, 600.0]), seek: Some(0.0), tempo: Some(60), ramp: Some(true), ..Default::default() };
+        p.command(c).unwrap();
+        let mut out = vec![];
+        // Clean pass: press the right key when it comes up.
+        run_ms(&p, 300, &[], &mut out);
+        run_with(&p, 1200, |k| (k == 72) as u8, &mut out);
+        assert_eq!(p.status().tempo, 65);
+        // A wrong key spoils the next pass: no speed-up.
+        run_with(&p, 300, |k| (k == 72) as u8 + (k == 61) as u8, &mut out);
+        run_with(&p, 1200, |k| 2 * (k == 72) as u8 + (k == 61) as u8, &mut out);
+        assert_eq!(p.status().tempo, 65);
+    }
+
+    #[test]
+    fn count_in_replays_the_bar_before_silently() {
+        let mut s = song(&[(1500, 100, 40, 1), (2000, 100, 72, 0), (2100, 100, 41, 1)]);
+        s.bars = vec![0, 2000, 4000];
+        let p = player_with(s, Mode::Other);
+        p.command(Command { playing: Some(false), seek: Some(2000.0), count_in: Some(true), ..Default::default() }).unwrap();
+        p.command(Command { playing: Some(true), ..Default::default() }).unwrap();
+        let st = p.status();
+        assert_eq!((st.pos, st.count_until), (0, Some(2000)), "one bar back");
+        let mut out = vec![];
+        run_ms(&p, 1900, &[], &mut out);
+        assert!(!out.iter().any(|m| m[0] == 0x90), "the count-in bar is silent: {out:?}");
+        run_ms(&p, 300, &[], &mut out);
+        assert!(out.contains(&[0x90, 41, 80]), "after it the song plays on");
+        assert_eq!(p.status().count_until, None);
+    }
+
+    #[test]
+    fn a_run_from_the_start_ends_with_a_scorecard() {
+        let p = player_with(song(&[(0, 100, 72, 0)]), Mode::Wait);
+        let mut out = vec![];
+        run_ms(&p, 2500, &[], &mut out); // lead-in, then waits for C5
+        run_with(&p, 300, |k| (k == 61) as u8, &mut out); // a wrong key first
+        run_with(&p, 2000, |k| (k == 61 || k == 72) as u8, &mut out);
+        let st = p.status();
+        assert!(!st.playing);
+        let r = st.result.expect("finished");
+        assert_eq!((r.right, r.wrong, r.tempo, r.accuracy), (1, 1, 100, 50));
+        assert!(r.waited_ms >= 500, "it waited for you: {}", r.waited_ms);
+        // A run that didn't start at the beginning doesn't count: the last
+        // scorecard stays, nothing new is recorded.
+        p.state.lock().unwrap().unsaved = false;
+        p.command(Command { seek: Some(50.0), playing: Some(true), ..Default::default() }).unwrap();
+        run_ms(&p, 3000, &[], &mut out);
+        assert_eq!(p.status().result, Some(r));
+        assert!(!p.state.lock().unwrap().unsaved);
+    }
+
+    #[test]
     fn loop_and_end_of_song() {
         let p = player_with(song(&[(0, 100, 60, 0)]), Mode::Listen);
         p.command(Command { loop_ab: Some(vec![0.0, 50.0]), seek: Some(0.0), ..Default::default() }).unwrap();
@@ -1214,6 +1467,7 @@ mod tests {
         assert_eq!(song.pedal, vec![(0, 127)]);
         // 3/4 at 60 bpm: a bar every 3 s.
         assert_eq!(song.bars, vec![0, 3000, 6000]);
+        assert_eq!(&song.beats[..4], &[0, 1000, 2000, 3000], "3/4 at 60 bpm: a beat a second");
         assert_eq!(default_track_roles(&song), vec![TrackRole::Right, TrackRole::Left]);
         assert!(parse(b"not midi").is_err());
     }
