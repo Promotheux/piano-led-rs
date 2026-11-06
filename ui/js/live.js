@@ -1,9 +1,9 @@
 // The live connection to the Pi: state 20× a second over a WebSocket.
 import { S } from './state.js';
-import { $, $$, api, fmt, ICON, setSeg, toast } from './util.js';
+import { $, api, ICON, setSeg, toast } from './util.js';
 import { prepareSpelling } from './music.js';
 import { renderTracks, showScorecard } from './controls.js';
-import { playerTitle } from './library.js';
+import { libraryLive, playerTitle } from '/dist/library.js';
 import { loadSettings, saveTimer } from './settings.js';
 import { renderTrainer } from './trainer.js';
 import { renderImprov } from './improv.js';
@@ -73,10 +73,6 @@ export function onLive() {
   }
   $('#play').setAttribute('aria-label', S.live.playing ? 'Pause' : 'Play');
   $('#waiting').hidden = !(S.live.playing && S.live.waiting);
-  const rec = S.live.record;
-  $('#record').classList.toggle('on', !!rec?.recording);
-  $('#record').setAttribute('aria-pressed', !!rec?.recording);
-  $('#record').textContent = rec?.recording ? `■ Stop ${fmt(rec.ms)} · ${rec.notes} notes` : '● Record';
   $('#score').textContent = S.live.mode !== 'listen' && S.live.right + S.live.wrong ? `✓ ${S.live.right}  ✗ ${S.live.wrong}` : '';
   showScorecard(S.live.result);
   $('#empty').hidden = !!S.live.song;
@@ -97,7 +93,7 @@ export function onLive() {
   $('#ramp').classList.toggle('on', S.live.ramp);
   $('#ramp').setAttribute('aria-pressed', S.live.ramp);
   $('#ramp').textContent = S.live.ramp && S.live.loop_ab && S.live.mistakes ? `Speed up · ${S.live.mistakes} ✗` : 'Speed up';
-  $$('#songs li').forEach((li) => li.classList.toggle('current', li.dataset.name === S.live.song));
+  libraryLive(S.live); // the Svelte Library: loaded song and recording state
 }
 
 export async function loadSong() {

@@ -2,7 +2,7 @@
 import { $ } from './util.js';
 import { draw, resize } from './view.js';
 import { connect } from './live.js';
-import { loadSongs } from './library.js';
+import { loadSongs } from '/dist/library.js';
 import { loadSettings } from './settings.js';
 import './state.js';
 import './music.js';

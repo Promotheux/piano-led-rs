@@ -3,7 +3,7 @@ import { S } from './state.js';
 import { $, $$, api, escapeHtml, fmt, player, setSeg, toast } from './util.js';
 import { displayPos } from './view.js';
 import { ensureAudio, showMetronome } from './metronome.js';
-import { renderSongs } from './library.js';
+import { renderSongs } from '/dist/library.js';
 import { form, save } from './settings.js';
 
 $('#play').addEventListener('click', () => S.live && player({ playing: !S.live.playing }));

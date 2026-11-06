@@ -1,0 +1,15 @@
+{
+  "name": "plv-ui",
+  "private": true,
+  "type": "module",
+  "description": "Svelte parts of the tablet app, built into ../ui/dist (committed, so the Rust build needs no Node).",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.3",
+    "vite": "^8.3.6"
+  }
+}

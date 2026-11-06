@@ -17,3 +17,6 @@
 # Impeccable design tooling: per-machine consent and the hook cache stay local.
 /.impeccable/config.local.json
 /.impeccable/hook.cache.json
+
+# Svelte build tooling (ui-src/); its output ui/dist/ is committed.
+/ui-src/node_modules
