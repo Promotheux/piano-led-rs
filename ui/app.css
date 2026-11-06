@@ -201,6 +201,7 @@ dialog h3 { margin: 0 0 12px; }
 .app-tile .app-icon { font-size: 32px; line-height: 1; margin-bottom: 8px; }
 .app-tile small { color: var(--muted); }
 .view > .back { align-self: flex-start; }
+.app-mount { display: contents; } /* the Svelte app inside lays out as if it were here */
 
 /* improv */
 .trainer .row.wrap { flex-wrap: wrap; justify-content: center; align-items: center; }

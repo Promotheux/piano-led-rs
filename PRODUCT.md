@@ -40,7 +40,7 @@ A rewrite of onlaj/Piano-LED-Visualizer as one small Rust binary for a Raspberry
 - Library: search, sort (title, artist, difficulty), difficulty filter, upload, record, edit title/artist/difficulty, rename, delete.
 - Apps: pitch trainer, improv, chord progressions.
 - Settings: LEDs and strip geometry, colours, MIDI, Wi-Fi, practice options, restart/reboot.
-- Technical constraints: runs in ~5 MB of memory; no heavy dependencies; the UI is embedded in the binary: plain ES modules, plus Svelte for the Library and Settings, built on the developer's machine (never on the Pi); the MIDI callback and render loop never allocate or lock; LAN only, no authentication (same as the original).
+- Technical constraints: runs in ~5 MB of memory; no heavy dependencies; the UI is embedded in the binary: plain ES modules, plus Svelte for the Library, Settings and the Apps, built on the developer's machine (never on the Pi); the MIDI callback and render loop never allocate or lock; LAN only, no authentication (same as the original).
 - Terminology: "wait mode", "play along", "listen", "hand", "loop A–B", "Speed up", "count-in", "Apps", "Library".
 
 ## Brand Commitments

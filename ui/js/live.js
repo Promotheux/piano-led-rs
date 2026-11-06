@@ -3,10 +3,7 @@ import { S } from './state.js';
 import { $, api, ICON, setSeg, toast } from './util.js';
 import { prepareSpelling } from './music.js';
 import { renderTracks, showScorecard } from './controls.js';
-import { libraryLive, loadSettings, playerTitle, savePending, settingsHealth } from '/dist/app.js';
-import { renderTrainer } from './trainer.js';
-import { renderImprov } from './improv.js';
-import { renderHarmony } from './harmony.js';
+import { appsLive, libraryLive, loadSettings, playerTitle, savePending, settingsHealth } from '/dist/app.js';
 
 export function connect() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
@@ -57,9 +54,7 @@ export function onLive() {
   // The Pi runs a newer UI: reload, so this page can't save settings it doesn't know.
   if (uiVersion !== null && S.live.ui !== uiVersion) return location.reload();
   uiVersion = S.live.ui;
-  renderTrainer();
-  renderImprov();
-  renderHarmony();
+  appsLive(S.live); // the Svelte Apps: trainer, improv, chord progressions
   // Another tablet (or this one) changed settings: reload them.
   if (S.settingsGen !== null && S.live.settings_gen !== S.settingsGen && !savePending()) loadSettings();
   S.settingsGen = S.live.settings_gen;

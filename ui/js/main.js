@@ -7,9 +7,6 @@ import './music.js';
 import './metronome.js';
 import './nav.js';
 import './controls.js';
-import './trainer.js';
-import './improv.js';
-import './harmony.js';
 
 // Chrome on Android only installs over HTTPS with a service worker.
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});

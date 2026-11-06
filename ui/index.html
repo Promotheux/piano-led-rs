@@ -102,99 +102,17 @@
 
   <section id="trainer" class="view" data-tab="apps">
     <button class="btn ghost back" data-open="apps">‹ Apps</button>
-    <div class="trainer">
-      <div class="seg" id="tr-drill" aria-label="Drill">
-        <button data-v="note">Notes</button>
-        <button data-v="interval">Intervals</button>
-        <button data-v="chord">Chords</button>
-      </div>
-      <p id="tr-prompt" class="tr-prompt">The piano plays a note. Find it on the keyboard.</p>
-      <p id="tr-note" class="tr-note" aria-live="polite">&nbsp;</p>
-      <p id="tr-keys" class="tr-keys"></p>
-      <div class="row">
-        <button id="tr-start" class="btn primary">Start</button>
-        <button id="tr-replay" class="btn" disabled>Play again</button>
-      </div>
-      <div class="seg" id="tr-range" aria-label="Range">
-        <button data-v="60-71">C4–B4</button>
-        <button data-v="48-71">C3–B4</button>
-        <button data-v="48-83">C3–B5</button>
-        <button data-v="36-84">C2–C6</button>
-      </div>
-      <div class="row">
-        <button id="tr-ref" class="btn ghost toggle" aria-pressed="false">Reference C4 first</button>
-        <button id="tr-auto" class="btn ghost toggle" aria-pressed="false">Auto range</button>
-      </div>
-      <p id="tr-rangenow" class="tr-keys"></p>
-      <dl class="tr-stats">
-        <dt>Streak</dt><dd id="tr-streak">0</dd>
-        <dt>Best</dt><dd id="tr-best">0</dd>
-        <dt>Right</dt><dd id="tr-score">–</dd>
-      </dl>
-      <button id="tr-reset" class="btn ghost">Reset score</button>
-    </div>
+    <div class="app-mount"></div><!-- Svelte (Trainer.svelte, built to /dist/app.js) -->
   </section>
 
   <section id="improv" class="view" data-tab="apps">
     <button class="btn ghost back" data-open="apps">‹ Apps</button>
-    <div class="trainer">
-      <div class="seg" id="im-source" aria-label="Chords from">
-        <button data-v="lead">I play the chords</button>
-        <button data-v="backing">Backing</button>
-      </div>
-      <p id="im-help" class="tr-prompt"></p>
-      <p id="im-chord" class="tr-note">&nbsp;</p>
-      <p id="im-next" class="tr-keys"></p>
-      <div id="im-beats" class="beats" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-      <button id="im-start" class="btn primary">Start</button>
-      <div class="row wrap">
-        <label class="inline">Key <select id="im-key"></select></label>
-        <div class="seg small" id="im-scale" aria-label="Scale">
-          <button data-v="major">Major</button><button data-v="minor">Minor</button><button data-v="blues">Blues</button>
-        </div>
-        <div class="seg small" id="im-lights" aria-label="What lights up">
-          <button data-v="scale">Chord + scale</button><button data-v="pentatonic">Pentatonic</button><button data-v="chord">Chord only</button>
-        </div>
-      </div>
-      <div class="row wrap" id="im-backing">
-        <div class="seg small" id="im-prog" aria-label="Progression">
-          <button data-v="pop">I–V–vi–IV</button><button data-v="fifties">I–vi–IV–V</button>
-          <button data-v="jazz">ii–V–I</button><button data-v="blues">12-bar blues</button><button data-v="minor">i–VI–III–VII</button>
-        </div>
-        <label class="tempo">Tempo <input id="im-tempo" type="range" min="40" max="200" step="5" value="80"><b id="im-tempoval">80</b></label>
-      </div>
-      <p class="tr-keys legend"><b class="sw chord"></b> chord notes, safe to land on &nbsp; <b class="sw scale"></b> scale notes, for passing</p>
-    </div>
+    <div class="app-mount"></div><!-- Svelte (Improv.svelte, built to /dist/app.js) -->
   </section>
 
   <section id="harmony" class="view" data-tab="apps">
     <button class="btn ghost back" data-open="apps">‹ Apps</button>
-    <div class="trainer">
-      <div class="seg" id="hm-prompt" aria-label="How it asks">
-        <button data-v="symbol">Read it</button>
-        <button data-v="sound">By ear</button>
-      </div>
-      <p id="hm-help" class="tr-prompt"></p>
-      <p id="hm-steps" class="hm-steps" aria-live="polite"></p>
-      <p id="hm-heard" class="tr-keys">&nbsp;</p>
-      <div class="row">
-        <button id="hm-start" class="btn primary">Start</button>
-        <button id="hm-replay" class="btn" disabled>Play again</button>
-      </div>
-      <div class="row wrap">
-        <label class="inline">Key <select id="hm-key"></select></label>
-        <div class="seg small" id="hm-prog" aria-label="Progression">
-          <button data-v="basic">I–IV–V–I</button><button data-v="pop">I–V–vi–IV</button><button data-v="fifties">I–vi–IV–V</button>
-          <button data-v="jazz">ii–V–I</button><button data-v="blues">12-bar blues</button><button data-v="minor">i–VI–III–VII</button>
-        </div>
-      </div>
-      <dl class="tr-stats">
-        <dt>Streak</dt><dd id="hm-streak">0</dd>
-        <dt>Best</dt><dd id="hm-best">0</dd>
-        <dt>Right</dt><dd id="hm-score">–</dd>
-      </dl>
-      <button id="hm-reset" class="btn ghost">Reset score</button>
-    </div>
+    <div class="app-mount"></div><!-- Svelte (Harmony.svelte, built to /dist/app.js) -->
   </section>
 
   <!-- Filled by the Svelte Settings (ui-src/, built to /dist/app.js). -->

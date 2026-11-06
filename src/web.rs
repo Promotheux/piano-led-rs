@@ -54,11 +54,8 @@ static UI: &[(&str, &str, &[u8])] = &[
     ("/js/nav.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/nav.js")),
     ("/js/live.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/live.js")),
     ("/js/controls.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/controls.js")),
-    // Library and Settings are Svelte, built from ui-src/ (`npm run build`, output committed).
+    // Library, Settings and the Apps are Svelte, built from ui-src/ (`npm run build`, output committed).
     ("/dist/app.js", "text/javascript; charset=utf-8", include_bytes!("../ui/dist/app.js")),
-    ("/js/trainer.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/trainer.js")),
-    ("/js/improv.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/improv.js")),
-    ("/js/harmony.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/harmony.js")),
     ("/js/main.js", "text/javascript; charset=utf-8", include_bytes!("../ui/js/main.js")),
     ("/app.css", "text/css; charset=utf-8", include_bytes!("../ui/app.css")),
     ("/sw.js", "text/javascript; charset=utf-8", include_bytes!("../ui/sw.js")),
