@@ -13,3 +13,7 @@
 
 # Base and built Raspberry Pi OS images (build_image.sh).
 /images
+
+# Impeccable design tooling: per-machine consent and the hook cache stay local.
+/.impeccable/config.local.json
+/.impeccable/hook.cache.json
