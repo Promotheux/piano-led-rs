@@ -1,8 +1,9 @@
 // The live connection to the Pi: state 20× a second over a WebSocket.
 import { S } from './state.js';
-import { $, $$, api, fmt, prettyName, setSeg, toast } from './util.js';
+import { $, $$, api, fmt, setSeg, toast } from './util.js';
 import { prepareSpelling } from './music.js';
 import { renderTracks, showScorecard } from './controls.js';
+import { playerTitle } from './library.js';
 import { loadSettings, saveTimer } from './settings.js';
 import { renderTrainer } from './trainer.js';
 import { renderImprov } from './improv.js';
@@ -104,7 +105,7 @@ export async function loadSong() {
     prepareSpelling(s);
     S.song = s;
     S.maxDur = s.notes.reduce((m, n) => Math.max(m, n[1]), 0);
-    $('#title').textContent = prettyName(s.name);
+    $('#title').textContent = playerTitle(s.name);
     renderTracks();
   } catch (e) {
     toast(e.message, true);

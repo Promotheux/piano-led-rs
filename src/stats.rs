@@ -46,22 +46,38 @@ impl Stats {
         s.best_tempo = s.best_tempo.max(tempo);
         s.best_accuracy = s.best_accuracy.max(accuracy);
         let out = *s;
+        self.save(&songs);
+        out
+    }
+
+    /// Forgets a deleted song.
+    pub fn remove(&self, song: &str) {
+        let mut songs = self.songs.lock().unwrap();
+        if songs.remove(song).is_some() {
+            self.save(&songs);
+        }
+    }
+
+    /// Carries a renamed song's record over to its new file name.
+    pub fn rename(&self, old: &str, new: &str) {
+        let mut songs = self.songs.lock().unwrap();
+        if let Some(s) = songs.remove(old) {
+            songs.insert(new.to_string(), s);
+            self.save(&songs);
+        }
+    }
+
+    fn save(&self, songs: &BTreeMap<String, SongStats>) {
         if let Some(p) = &self.path {
             // Write-then-rename, like the settings: a power cut can't truncate it.
             let tmp = p.with_extension("json.tmp");
-            let saved = serde_json::to_vec_pretty(&*songs)
+            let saved = serde_json::to_vec_pretty(songs)
                 .map_err(|e| e.to_string())
                 .and_then(|j| std::fs::write(&tmp, j).and_then(|_| std::fs::rename(&tmp, p)).map_err(|e| e.to_string()));
             if let Err(e) = saved {
                 eprintln!("stats: can't save {}: {e}", p.display());
             }
         }
-        out
-    }
-
-    /// Forgets a deleted song.
-    pub fn remove(&self, song: &str) {
-        self.songs.lock().unwrap().remove(song);
     }
 }
 
@@ -77,6 +93,9 @@ mod tests {
         let r = s.record("a.mid", 70, 95);
         assert_eq!(r, SongStats { finished: 2, best_tempo: 80, best_accuracy: 95 });
         assert_eq!(Stats::load(Some(path.clone())).all()["a.mid"], r);
+        s.rename("a.mid", "b.mid");
+        let reloaded = Stats::load(Some(path.clone())).all();
+        assert_eq!((reloaded.get("a.mid"), reloaded.get("b.mid")), (None, Some(&r)));
         let _ = std::fs::remove_file(path);
     }
 }

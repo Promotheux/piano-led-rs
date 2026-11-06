@@ -1,6 +1,6 @@
-// The song library: list, search, upload, record.
+// The song library: list, search, upload, record, edit.
 import { S } from './state.js';
-import { $, api, escapeHtml, player, post, prettyName, toast } from './util.js';
+import { $, api, escapeHtml, player, post, prettyName, songTitle, toast } from './util.js';
 import { show } from './nav.js';
 
  // song name -> { finished, best_tempo, best_accuracy }
@@ -9,32 +9,45 @@ export async function loadSongs() {
     S.songs = (await api('/api/songs')).songs;
     S.stats = await api('/api/stats').catch(() => ({}));
     renderSongs();
+    if (S.song) $('#title').textContent = playerTitle(S.song.name);
   } catch (e) {
     toast(e.message, true);
   }
+}
+/** "Title · Artist" for the player bar. */
+export function playerTitle(name) {
+  const s = (S.songs || []).find((x) => x.name === name) || { name };
+  return s.artist ? `${songTitle(s)} · ${s.artist}` : songTitle(s);
 }
 export function renderSongs() {
   const q = $('#search').value.trim().toLowerCase();
   const ul = $('#songs');
   ul.innerHTML = '';
   for (const s of S.songs) {
-    if (q && !s.name.toLowerCase().includes(q)) continue;
+    if (q && ![s.name, s.title, s.artist].some((t) => t && t.toLowerCase().includes(q))) continue;
+    const title = escapeHtml(songTitle(s));
     const li = document.createElement('li');
     li.dataset.name = s.name;
     li.classList.toggle('current', S.live && S.live.song === s.name);
-    li.innerHTML = `<span class="name">${escapeHtml(prettyName(s.name))}</span>${S.stats[s.name] ? `<span class="best" title="Best tempo you finished it at">★ ${S.stats[s.name].best_tempo}%</span>` : ''}` +
+    li.innerHTML = `<span class="name">${title}${s.artist ? `<span class="artist">${escapeHtml(s.artist)}</span>` : ''}</span>` +
+      `${S.stats[s.name] ? `<span class="best" title="Best tempo you finished it at">★ ${S.stats[s.name].best_tempo}%</span>` : ''}` +
       `<span class="size">${Math.max(1, Math.round(s.size / 1024))} KB</span>` +
-      `<button class="icon-btn del" aria-label="Delete ${escapeHtml(prettyName(s.name))}">🗑</button>`;
+      `<button class="icon-btn edit" aria-label="Edit ${title}">✎</button>` +
+      `<button class="icon-btn del" aria-label="Delete ${title}">🗑</button>`;
     li.addEventListener('click', async () => {
       await player({ song: s.name });
       show('player');
     });
-    li.querySelector('.del').addEventListener('click', async (e) => {
+    li.querySelector('.edit').addEventListener('click', (e) => {
       e.stopPropagation(); // don't open the song
-      if (!confirm(`Delete "${prettyName(s.name)}"? This removes the file from the Pi.`)) return;
+      openEdit(s);
+    });
+    li.querySelector('.del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${songTitle(s)}"? This removes the file from the Pi.`)) return;
       try {
         await api(`/api/songs?name=${encodeURIComponent(s.name)}`, { method: 'DELETE' });
-        toast(`Deleted ${prettyName(s.name)}`);
+        toast(`Deleted ${songTitle(s)}`);
         loadSongs();
       } catch (err) {
         toast(err.message, true);
@@ -43,6 +56,37 @@ export function renderSongs() {
     ul.append(li);
   }
 }
+
+let editing = null;
+function openEdit(s) {
+  editing = s;
+  const ext = s.name.match(/\.midi?$/i)[0];
+  $('#edit-title').value = s.title || '';
+  $('#edit-title').placeholder = prettyName(s.name);
+  $('#edit-artist').value = s.artist || '';
+  $('#edit-file').value = s.name.slice(0, -ext.length);
+  $('#edit-ext').textContent = ext;
+  $('#edit').showModal(); // native modal: focuses the first field, Escape closes
+}
+$('#edit-cancel').addEventListener('click', () => $('#edit').close());
+$('#editform').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const s = editing;
+  const rename = $('#edit-file').value.trim() + $('#edit-ext').textContent;
+  try {
+    await api(`/api/songs?name=${encodeURIComponent(s.name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: $('#edit-title').value, artist: $('#edit-artist').value, rename }),
+    });
+    $('#edit').close();
+    toast('Saved');
+    loadSongs();
+  } catch (err) {
+    toast(err.message, true); // keep the dialog open to fix it
+  }
+});
+
 $('#search').addEventListener('input', renderSongs);
 $('#record').addEventListener('click', async () => {
   if (!S.live) return;

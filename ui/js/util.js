@@ -28,6 +28,8 @@ export const fmt = (ms) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 export const prettyName = (n) => n.replace(/\.midi?$/i, '').replace(/[_]+/g, ' ');
+/** A library entry's title (from its sidecar), else its prettified file name. */
+export const songTitle = (s) => s.title || prettyName(s.name);
 
 export function setSeg(sel, value) {
   $$(`${sel} button`).forEach((b) => b.classList.toggle('on', b.dataset.v === value));

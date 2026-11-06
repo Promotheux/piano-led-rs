@@ -128,6 +128,7 @@ fn handle(app: &Arc<App>, mut req: Request) {
         },
         (Method::Get, "/api/songs") => list_songs(&app.songs_dir),
         (Method::Post, "/api/songs") => upload(app, &mut req, query),
+        (Method::Put, "/api/songs") => edit_song(app, &mut req, query),
         (Method::Delete, "/api/songs") => delete_song(app, query),
         (Method::Get, "/api/settings") => json(&app.settings.get()),
         (Method::Put, "/api/settings") => put_settings(app, &mut req),
@@ -394,11 +395,116 @@ fn song_path(dir: &Path, name: &str) -> Option<PathBuf> {
     ok.then(|| dir.join(name))
 }
 
+/// Title and artist of a song, kept in `<song file>.json` beside it so the
+/// MIDI file itself is never rewritten. Empty means "use the file name".
+#[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
+#[serde(default)]
+struct Meta {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    title: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    artist: String,
+}
+
+fn sidecar(song: &Path) -> PathBuf {
+    let mut p = song.as_os_str().to_owned();
+    p.push(".json");
+    p.into()
+}
+
+fn read_meta(song: &Path) -> Meta {
+    std::fs::read(sidecar(song)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// Saves the sidecar, or removes it once both fields are empty.
+fn write_meta(song: &Path, m: &Meta) -> std::io::Result<()> {
+    let path = sidecar(song);
+    if m.title.is_empty() && m.artist.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        };
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec(m)?).and_then(|_| std::fs::rename(&tmp, &path))
+}
+
+/// Renames a song file and its sidecar, refusing bad names and overwrites.
+fn rename_song(dir: &Path, old: &str, new: &str) -> Result<(), (u16, String)> {
+    let (Some(from), Some(to)) = (song_path(dir, old), song_path(dir, new)) else {
+        return Err((400, "name must be a .mid file name".into()));
+    };
+    if !from.exists() {
+        return Err((404, "no such song".into()));
+    }
+    if to.exists() || sidecar(&to).exists() {
+        return Err((409, "a song with that name already exists".into()));
+    }
+    std::fs::rename(&from, &to).map_err(|e| (500, format!("rename failed: {e}")))?;
+    if let Err(e) = std::fs::rename(sidecar(&from), sidecar(&to)) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            eprintln!("web: can't move the sidecar of {old}: {e}");
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct EditRequest {
+    /// New file name; omitted or equal to the old one keeps it.
+    rename: Option<String>,
+    #[serde(flatten)]
+    meta: Meta,
+}
+
+/// `PUT /api/songs?name=<file>` with `{title, artist, rename?}`.
+fn edit_song(app: &App, req: &mut Request, query: &str) -> Resp {
+    let name = name_param(query);
+    let body = match read_body(req, MAX_JSON) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let EditRequest { rename, mut meta } = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return error(400, &e.to_string()),
+    };
+    meta.title = meta.title.trim().to_string();
+    meta.artist = meta.artist.trim().to_string();
+    if meta.title.len() > 200 || meta.artist.len() > 200 {
+        return error(400, "title and artist are limited to 200 bytes");
+    }
+    let mut name_now = name.clone();
+    if let Some(new) = rename.map(|n| n.trim().to_string()).filter(|n| *n != name) {
+        if let Err((code, msg)) = rename_song(&app.songs_dir, &name, &new) {
+            return error(code, &msg);
+        }
+        app.stats.rename(&name, &new);
+        // Reload the open song under its new name (this rewinds it), so the
+        // player and its stats keep pointing at a file that exists.
+        if app.player.status().song.as_deref() == Some(name.as_str()) {
+            let path = app.songs_dir.join(&new);
+            if let Ok(song) = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| player::parse(&b)) {
+                app.player.load(new.clone(), song);
+            }
+        }
+        name_now = new;
+    }
+    let Some(path) = song_path(&app.songs_dir, &name_now).filter(|p| p.exists()) else {
+        return error(404, "no such song");
+    };
+    if let Err(e) = write_meta(&path, &meta) {
+        return error(500, &format!("save failed: {e}"));
+    }
+    json(&serde_json::json!({ "name": name_now, "title": meta.title, "artist": meta.artist }))
+}
+
 fn list_songs(dir: &Path) -> Resp {
     #[derive(Serialize)]
     struct Entry {
         name: String,
         size: u64,
+        #[serde(flatten)]
+        meta: Meta,
     }
     let Ok(rd) = std::fs::read_dir(dir) else {
         return error(500, &format!("cannot read songs folder {}", dir.display()));
@@ -407,8 +513,8 @@ fn list_songs(dir: &Path) -> Resp {
         .filter_map(Result::ok)
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
-            song_path(dir, &name)?;
-            Some(Entry { size: e.metadata().ok()?.len(), name })
+            let path = song_path(dir, &name)?;
+            Some(Entry { size: e.metadata().ok()?.len(), meta: read_meta(&path), name })
         })
         .collect();
     songs.sort_by_key(|e| e.name.to_lowercase());
@@ -438,6 +544,7 @@ fn delete_song(app: &App, query: &str) -> Resp {
     };
     match std::fs::remove_file(&path) {
         Ok(()) => {
+            let _ = std::fs::remove_file(sidecar(&path));
             app.stats.remove(&name);
             json(&serde_json::json!({ "deleted": name }))
         }
@@ -583,6 +690,38 @@ mod tests {
         assert_eq!(find_duplicate(&dir, b"MThd-one").as_deref(), Some("a.mid"));
         assert_eq!(find_duplicate(&dir, b"MThd-new"), None);
         assert_eq!(find_duplicate(&dir, b"different length"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sidecar_metadata_and_renames() {
+        let dir = std::env::temp_dir().join(format!("plv-meta-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.mid");
+        std::fs::write(&a, b"MThd-a").unwrap();
+        std::fs::write(dir.join("taken.mid"), b"MThd-b").unwrap();
+
+        assert_eq!(read_meta(&a), Meta::default());
+        let m = Meta { title: "Für Elise".into(), artist: "Beethoven".into() };
+        write_meta(&a, &m).unwrap();
+        assert_eq!(read_meta(&a), m);
+        assert!(dir.join("a.mid.json").exists());
+
+        for bad in ["../x.mid", "x.txt", ".x.mid", ""] {
+            assert_eq!(rename_song(&dir, "a.mid", bad).unwrap_err().0, 400, "{bad}");
+        }
+        assert_eq!(rename_song(&dir, "a.mid", "taken.mid").unwrap_err().0, 409);
+        assert_eq!(rename_song(&dir, "gone.mid", "new.mid").unwrap_err().0, 404);
+        assert_eq!(std::fs::read(dir.join("taken.mid")).unwrap(), b"MThd-b"); // untouched
+
+        rename_song(&dir, "a.mid", "Elise.mid").unwrap();
+        let e = dir.join("Elise.mid");
+        assert!(!a.exists() && !dir.join("a.mid.json").exists());
+        assert_eq!((std::fs::read(&e).unwrap(), read_meta(&e)), (b"MThd-a".to_vec(), m));
+
+        write_meta(&e, &Meta::default()).unwrap(); // clearing both removes the sidecar
+        assert!(!dir.join("Elise.mid.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -37,6 +37,18 @@
       <button id="record" class="btn" aria-pressed="false" title="Record what you play to a new song in the library">● Record</button>
     </div>
     <ul id="songs" class="songlist"></ul>
+    <dialog id="edit" aria-labelledby="edit-heading">
+      <h3 id="edit-heading">Edit song</h3>
+      <form id="editform" class="editform">
+        <label>Title<input id="edit-title" type="text" maxlength="200" autocomplete="off" placeholder="From the file name"></label>
+        <label>Artist<input id="edit-artist" type="text" maxlength="200" autocomplete="off"></label>
+        <label>File name<span class="file"><input id="edit-file" type="text" maxlength="190" autocomplete="off" required><span id="edit-ext"></span></span></label>
+        <div class="actions">
+          <button id="edit-cancel" type="button" class="btn ghost">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </dialog>
   </section>
 
   <section id="player" class="view">
