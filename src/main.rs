@@ -9,6 +9,7 @@
 
 mod color;
 mod config;
+mod difficulty;
 mod hal;
 mod health;
 mod harmony;

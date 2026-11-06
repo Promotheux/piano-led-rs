@@ -15,6 +15,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 
+use crate::difficulty;
 use crate::health::{self, Health};
 use crate::midi;
 use crate::notes::NoteState;
@@ -397,6 +398,8 @@ fn song_path(dir: &Path, name: &str) -> Option<PathBuf> {
 
 /// Title and artist of a song, kept in `<song file>.json` beside it so the
 /// MIDI file itself is never rewritten. Empty means "use the file name".
+/// `difficulty` is rated from the notes on upload or first listing;
+/// `difficulty_set` is your own choice, which wins over it.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
 #[serde(default)]
 struct Meta {
@@ -404,6 +407,10 @@ struct Meta {
     title: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     artist: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    difficulty: Option<difficulty::Level>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    difficulty_set: Option<difficulty::Level>,
 }
 
 fn sidecar(song: &Path) -> PathBuf {
@@ -419,7 +426,7 @@ fn read_meta(song: &Path) -> Meta {
 /// Saves the sidecar, or removes it once both fields are empty.
 fn write_meta(song: &Path, m: &Meta) -> std::io::Result<()> {
     let path = sidecar(song);
-    if m.title.is_empty() && m.artist.is_empty() {
+    if m.title.is_empty() && m.artist.is_empty() && m.difficulty.is_none() && m.difficulty_set.is_none() {
         return match std::fs::remove_file(&path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
@@ -492,10 +499,11 @@ fn edit_song(app: &App, req: &mut Request, query: &str) -> Resp {
     let Some(path) = song_path(&app.songs_dir, &name_now).filter(|p| p.exists()) else {
         return error(404, "no such song");
     };
+    meta.difficulty = read_meta(&path).difficulty; // rated from the notes, not editable
     if let Err(e) = write_meta(&path, &meta) {
         return error(500, &format!("save failed: {e}"));
     }
-    json(&serde_json::json!({ "name": name_now, "title": meta.title, "artist": meta.artist }))
+    json(&serde_json::json!({ "name": name_now, "title": meta.title, "artist": meta.artist, "difficulty_set": meta.difficulty_set }))
 }
 
 fn list_songs(dir: &Path) -> Resp {
@@ -514,7 +522,17 @@ fn list_songs(dir: &Path) -> Resp {
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
             let path = song_path(dir, &name)?;
-            Some(Entry { size: e.metadata().ok()?.len(), meta: read_meta(&path), name })
+            let mut meta = read_meta(&path);
+            if meta.difficulty.is_none() {
+                // Not rated yet (added before ratings existed, or by hand): rate and keep it.
+                if let Ok(song) = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| player::parse(&b)) {
+                    meta.difficulty = Some(difficulty::rate(&song));
+                    if let Err(e) = write_meta(&path, &meta) {
+                        eprintln!("web: can't save the rating of {name}: {e}");
+                    }
+                }
+            }
+            Some(Entry { size: e.metadata().ok()?.len(), meta, name })
         })
         .collect();
     songs.sort_by_key(|e| e.name.to_lowercase());
@@ -565,9 +583,10 @@ fn upload(app: &App, req: &mut Request, query: &str) -> Resp {
         Ok(b) => b,
         Err(r) => return r,
     };
-    if let Err(e) = player::parse(&body) {
-        return error(422, &e);
-    }
+    let song = match player::parse(&body) {
+        Ok(s) => s,
+        Err(e) => return error(422, &e),
+    };
     if let Some(existing) = find_duplicate(&app.songs_dir, &body) {
         return error(409, &format!("already in your library as {existing}"));
     }
@@ -576,6 +595,10 @@ fn upload(app: &App, req: &mut Request, query: &str) -> Resp {
     if let Err(e) = std::fs::write(&tmp, &body).and_then(|_| std::fs::rename(&tmp, &path)) {
         let _ = std::fs::remove_file(&tmp);
         return error(507, &format!("save failed: {e}"));
+    }
+    let meta = Meta { difficulty: Some(difficulty::rate(&song)), ..Default::default() };
+    if let Err(e) = write_meta(&path, &meta) {
+        eprintln!("web: can't save the rating of {name}: {e}");
     }
     json(&serde_json::json!({ "name": name }))
 }
@@ -703,7 +726,12 @@ mod tests {
         std::fs::write(dir.join("taken.mid"), b"MThd-b").unwrap();
 
         assert_eq!(read_meta(&a), Meta::default());
-        let m = Meta { title: "Für Elise".into(), artist: "Beethoven".into() };
+        let m = Meta {
+            title: "Für Elise".into(),
+            artist: "Beethoven".into(),
+            difficulty: Some(difficulty::Level::Easy),
+            difficulty_set: Some(difficulty::Level::Beginner),
+        };
         write_meta(&a, &m).unwrap();
         assert_eq!(read_meta(&a), m);
         assert!(dir.join("a.mid.json").exists());

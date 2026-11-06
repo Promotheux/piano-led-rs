@@ -36,16 +36,26 @@
       <select id="sort" aria-label="Sort songs">
         <option value="title">Title A–Z</option>
         <option value="artist">Artist A–Z</option>
+        <option value="difficulty">Difficulty (easiest first)</option>
       </select>
       <label class="btn">Upload .mid<input id="upload" type="file" accept=".mid,.midi,audio/midi" multiple hidden></label>
       <button id="record" class="btn" aria-pressed="false" title="Record what you play to a new song in the library">● Record</button>
     </div>
+    <div id="levels" class="pills" role="group" aria-label="Show songs of one difficulty"></div>
     <ul id="songs" class="songlist"></ul>
     <dialog id="edit" aria-labelledby="edit-heading">
       <h3 id="edit-heading">Edit song</h3>
       <form id="editform" class="editform">
         <label>Title<input id="edit-title" type="text" maxlength="200" autocomplete="off" placeholder="From the file name"></label>
         <label>Artist<input id="edit-artist" type="text" maxlength="200" autocomplete="off"></label>
+        <label>Difficulty<select id="edit-difficulty">
+          <option value="">Automatic</option>
+          <option value="beginner">Beginner</option>
+          <option value="easy">Easy</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+          <option value="expert">Expert</option>
+        </select></label>
         <label>File name<span class="file"><input id="edit-file" type="text" maxlength="190" autocomplete="off" required><span id="edit-ext"></span></span></label>
         <div class="actions">
           <button id="edit-cancel" type="button" class="btn ghost">Cancel</button>
