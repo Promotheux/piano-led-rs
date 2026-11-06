@@ -20,7 +20,7 @@ use crate::recorder::Recorder;
 use crate::stats::Stats;
 use crate::improv::Improv;
 use crate::trainer::Trainer;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_LEFT, HINT_PREVIEW, HINT_REQUIRED, HINT_RIGHT};
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_DONE, HINT_HIDDEN, HINT_LEFT, HINT_PREVIEW, HINT_REQUIRED, HINT_RIGHT};
 
 /// Notes starting within this window count as one chord in wait mode.
 const CHORD_MS: u32 = 60;
@@ -758,17 +758,25 @@ impl State {
                 continue;
             }
             if self.practised(i) {
+                let k = n.key as usize;
                 // A key of the chord we're waiting at that you already played
-                // stays satisfied when released: don't prompt for it again.
+                // stays satisfied when released, and shows as done until the
+                // whole chord is played (pressing it again is fine too).
                 if self.waiting && t > self.pos && self.played(n.key, t - EARLY_MS) {
+                    if h[k] == 0 {
+                        h[k] = hand | HINT_DONE;
+                    }
                     continue;
                 }
                 // Wait mode only gets past a note once it's played: a long note
-                // then goes dark, so a lit key always means "play this".
+                // then goes dark, so a lit key always means "play this". While it
+                // still sounds, striking it again is fine (hidden, not wrong).
                 if self.pos < t + n.dur as f64 && !(self.mode == Mode::Wait && t <= self.pos) {
-                    let blink = if self.blink[n.key as usize] { HINT_BLINK } else { 0 };
+                    let blink = if self.blink[k] { HINT_BLINK } else { 0 };
                     let required = if self.waiting && t > self.pos { HINT_REQUIRED } else { 0 };
-                    h[n.key as usize] = hand | blink | required;
+                    h[k] = hand | blink | required;
+                } else if self.mode == Mode::Wait && self.pos < t + n.dur as f64 && h[k] == 0 {
+                    h[k] = hand | HINT_HIDDEN;
                 }
             } else if t <= self.pos && self.sounding[n.key as usize] {
                 h[n.key as usize] = hand | HINT_BRIGHT;
@@ -1175,7 +1183,7 @@ mod tests {
         assert!(st.waiting);
         assert_eq!(st.done, vec![72]);
         let h = p.state.lock().unwrap().hints();
-        assert_eq!(h[72], 0, "no re-prompt for the played key");
+        assert_eq!(h[72], HINT_RIGHT | HINT_DONE, "no re-prompt for the played key: it shows as done");
         assert_eq!(h[76], HINT_RIGHT | HINT_REQUIRED, "the missing key is still shown, as required");
         run_ms(&p, 50, &[72, 76], &mut out);
         assert!(!p.status().waiting, "72 still counts without pressing it again");
@@ -1261,11 +1269,42 @@ mod tests {
         assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT | HINT_REQUIRED);
         run_ms(&p, 300, &[72], &mut out); // played; the note sounds on till 3000
         assert!(!p.status().waiting);
-        assert_eq!(p.state.lock().unwrap().hints()[72], 0);
+        // Dark, but striking it again while it sounds isn't a wrong note.
+        assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT | HINT_HIDDEN);
         // Play-along keeps it lit for its whole length.
         let p = player_with(song(&[(1000, 2000, 72, 0)]), Mode::Other);
         run_ms(&p, 3500, &[72], &mut out); // pos ~ 1500
         assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT);
+    }
+
+    #[test]
+    fn re_pressing_a_played_chord_key_while_waiting_is_not_wrong() {
+        let p = player_with(song(&[(1000, 500, 72, 0), (1000, 500, 76, 0)]), Mode::Wait);
+        let mut out = vec![];
+        run_ms(&p, 3100, &[], &mut out); // waiting at C5+E5
+        run_with(&p, 100, |k| (k == 72) as u8, &mut out); // C5 played and let go
+        let h = p.state.lock().unwrap().hints();
+        assert!(p.status().waiting);
+        assert_eq!(h[72], HINT_RIGHT | HINT_DONE, "done, not prompted again");
+        assert_eq!(h[76], HINT_RIGHT | HINT_REQUIRED);
+        run_with(&p, 100, |k| 2 * (k == 72) as u8, &mut out); // C5 again: still waiting for E5
+        assert!(p.status().waiting);
+        run_with(&p, 100, |k| 2 * (k == 72) as u8 + (k == 76) as u8, &mut out);
+        assert!(!p.status().waiting, "E5 completes the chord");
+    }
+
+    #[test]
+    fn a_key_held_from_the_last_chord_needs_a_fresh_press() {
+        let p = player_with(song(&[(1000, 300, 72, 0), (1500, 300, 72, 0)]), Mode::Wait);
+        let mut out = vec![];
+        run_ms(&p, 3100, &[], &mut out);
+        // Press C5 once and keep holding it: the first note passes, the second waits.
+        run_with(&p, 800, |k| (k == 72) as u8, &mut out);
+        let st = p.status();
+        assert!(st.waiting && (1400..1500).contains(&st.pos), "pos {}", st.pos);
+        assert_eq!(p.state.lock().unwrap().hints()[72], HINT_RIGHT | HINT_REQUIRED);
+        run_with(&p, 100, |k| 2 * (k == 72) as u8, &mut out); // a fresh press
+        assert!(!p.status().waiting);
     }
 
     #[test]

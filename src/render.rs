@@ -11,7 +11,7 @@ use crate::color::{GammaLut, Rgb};
 use crate::hal::LedDriver;
 use crate::health::Health;
 use crate::keymap::KeyMap;
-use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_HIDDEN, HINT_PREVIEW, HINT_REQUIRED};
+use crate::notes::{NoteState, HINT_BLINK, HINT_BRIGHT, HINT_DONE, HINT_HIDDEN, HINT_PREVIEW, HINT_REQUIRED};
 use crate::settings::{Settings, SettingsStore};
 
 /// Envelope level is 8.8 fixed point: 0..=MAX_LEVEL.
@@ -192,6 +192,12 @@ impl Renderer {
             let c = if lvl != 0 && h & HINT_REQUIRED == 0 {
                 let base = self.feedback[n].unwrap_or(self.note_color[n]);
                 self.gamma.apply(base.scale(lvl))
+            } else if h & HINT_DONE != 0 {
+                // Played already, the rest of the chord still to come: dim
+                // green, like a preview's share but always above the backlight.
+                let c = self.gamma.apply(RIGHT_KEY.scale(PREVIEW_SHARE));
+                let floor = bl_peak.saturating_add(4).max(6);
+                if peak(c) < floor { at_peak(RIGHT_KEY, floor) } else { c }
             } else if h & HINT_HIDDEN != 0 || (h & HINT_BLINK != 0 && blink_off) {
                 Rgb::BLACK
             } else if h != 0 {
@@ -449,6 +455,43 @@ mod tests {
         notes.strike_hint(60);
         r.update(&notes, Duration::from_millis(2));
         assert!(r.pixels()[80].b < HINT_AUTO / 2);
+    }
+
+    #[test]
+    fn a_done_chord_key_stays_dim_green_and_the_rest_keep_their_colour() {
+        let mut r = renderer();
+        r.hand_color = [Rgb::new(0, 0, 255), Rgb::new(0, 255, 0)];
+        let notes = NoteState::new();
+        notes.set_practice(true);
+        // C4 played and let go; E4 still to play.
+        notes.set_hint(60, crate::notes::HINT_RIGHT | HINT_DONE);
+        notes.set_hint(64, crate::notes::HINT_RIGHT | HINT_REQUIRED);
+        r.update(&notes, Duration::from_millis(1000));
+        let done = r.pixels()[80];
+        assert!(done.g > 0 && done.r == 0 && done.b == 0 && done.g < RIGHT_KEY.g, "dim green: {done:?}");
+        assert_eq!(r.pixels()[88], Rgb::new(0, 0, 255), "the key still to play keeps its hand colour");
+        // Pressing the done key again: full green, not red (after the short
+        // re-strike dip every lit key gets).
+        notes.note_on(60, 100);
+        r.update(&notes, Duration::from_millis(50));
+        r.update(&notes, Duration::from_millis(50));
+        assert_eq!(r.pixels()[80], RIGHT_KEY);
+    }
+
+    #[test]
+    fn a_hidden_hint_is_dark_but_pressing_it_is_right() {
+        let mut r = renderer();
+        let notes = NoteState::new();
+        notes.set_practice(true);
+        notes.set_hint(60, crate::notes::HINT_RIGHT | HINT_HIDDEN);
+        r.update(&notes, Duration::from_millis(16));
+        assert!(r.pixels()[80].is_black(), "not lit while waiting");
+        notes.note_on(60, 127); // pressed again: fine, not red
+        r.update(&notes, Duration::from_millis(16));
+        assert_eq!(r.pixels()[80], RIGHT_KEY);
+        notes.note_off(60);
+        r.update(&notes, Duration::from_millis(1000));
+        assert!(r.pixels()[80].is_black(), "dark again once released");
     }
 
     #[test]

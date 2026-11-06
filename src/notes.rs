@@ -33,6 +33,9 @@ pub const HINT_REQUIRED: u8 = 32;
 /// Pitch trainer: the key to find. Judged like a hint (green when played)
 /// but not drawn, so it doesn't give the answer away.
 pub const HINT_HIDDEN: u8 = 64;
+/// Wait mode: this key of the chord we're stopped at is played already; it
+/// shows as done (dim green) until the rest of the chord is played.
+pub const HINT_DONE: u8 = 128;
 
 pub struct NoteState {
     held: [AtomicU8; 128],
