@@ -10,7 +10,7 @@ web
 
 Piano players who install plv on their own Raspberry Pi and their own digital piano (open-source users), with an LED strip above the keys and a tablet on the music stand. The author builds and tests it on a Yamaha Portable Grand at home, but the product is for anyone with that setup, not one person.
 
-They use it at the piano: the tablet sits at arm's length on the music stand, the room is often dim (evening practice), and their hands are on the keys most of the time.
+They use it at the piano: the tablet sits at arm's length on the music stand, the room is often dim (evening practice), and their hands are on the keys most of the time. The tablet is in **landscape**, and the app must work best that way; portrait and phones must still work.
 
 ## Product Purpose
 

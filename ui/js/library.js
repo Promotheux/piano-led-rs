@@ -1,6 +1,6 @@
 // The song library: list, search, upload, record, edit.
 import { S } from './state.js';
-import { $, api, escapeHtml, player, post, prettyName, songTitle, toast } from './util.js';
+import { $, api, escapeHtml, ICON, player, post, prettyName, songTitle, toast } from './util.js';
 import { show } from './nav.js';
 
 export async function loadSongs() {
@@ -84,8 +84,8 @@ export function renderSongs() {
       `<div class="meta"><span class="best">${S.stats[s.name] ? `<span title="Best tempo you finished it at">★ ${S.stats[s.name].best_tempo}%</span>` : ''}</span>` +
       `<span class="level">${badge}</span>` +
       `<span class="size">${Math.max(1, Math.round(s.size / 1024))} KB</span></div>` +
-      `<div class="actions"><button class="icon-btn edit" aria-label="Edit ${title}">✎</button>` +
-      `<button class="icon-btn del" aria-label="Delete ${title}">🗑</button></div>`;
+      `<div class="actions"><button class="icon-btn edit" aria-label="Edit ${title}">${ICON.edit}</button>` +
+      `<button class="icon-btn del" aria-label="Delete ${title}">${ICON.trash}</button></div>`;
     li.addEventListener('click', async () => {
       await player({ song: s.name });
       show('player');

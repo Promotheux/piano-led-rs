@@ -6,6 +6,7 @@
   --text: #e8ebf3;
   --muted: #8b93a7;
   --accent: #6d8bff;
+  --accent-strong: #4a66e0; /* filled buttons: white text at 4.9:1 */
   --ok: #3ddc97;
   --warn: #ffb547;
   --radius: 14px;
@@ -25,6 +26,8 @@ button, input, select { font: inherit; color: inherit; }
 .tab { border: 0; background: none; padding: 8px 20px; border-radius: 999px; color: var(--muted); min-height: 40px; cursor: pointer; }
 .tab.active { background: var(--panel-2); color: var(--text); }
 .topright { display: flex; align-items: center; gap: 10px; }
+.ico { width: 20px; height: 20px; display: block; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.big .ico { width: 26px; height: 26px; }
 .conn { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); }
 .conn.on { background: var(--ok); }
 main { flex: 1; min-height: 0; position: relative; }
@@ -35,7 +38,7 @@ main { flex: 1; min-height: 0; position: relative; }
 .btn.ghost { background: none; }
 .icon-btn { min-width: 44px; padding: 0 12px; font-size: 18px; }
 .icon-btn.big { min-width: 56px; min-height: 56px; font-size: 22px; border-radius: 50%; }
-.icon-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.icon-btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 button:active { transform: scale(.97); }
 
 .editform label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); margin-bottom: 14px; }
@@ -106,6 +109,15 @@ button:active { transform: scale(.97); }
 .row { display: flex; align-items: center; gap: 12px; }
 .row.wrap { flex-wrap: wrap; }
 #scrub { flex: 1; }
+/* Short landscape screens (a phone on its side): transport and options share
+   one row and the options scroll sideways, so the notes keep the height. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .controls { flex-direction: row; align-items: center; gap: 12px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
+  .controls > .row:first-child { flex: 0 0 auto; }
+  .controls #scrub { flex: 0 0 160px; }
+  .controls .row.wrap { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .controls .row.wrap > * { flex-shrink: 0; }
+}
 input[type=range] { accent-color: var(--accent); min-height: 32px; }
 .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
 .seg button { border: 0; background: none; padding: 8px 14px; border-radius: 9px; color: var(--muted); min-height: 40px; cursor: pointer; }
@@ -175,6 +187,12 @@ dialog h3 { margin: 0 0 12px; }
   .brand span { display: none; }
   .tab { padding: 8px 12px; }
 }
+/* Phones: the four tabs need the whole bar; full screen is for the tablet. */
+@media (max-width: 480px) {
+  .topbar { gap: 8px; padding: 8px 10px; }
+  .tab { padding: 8px 10px; }
+  #fullscreen { display: none; }
+}
 
 /* apps */
 .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
@@ -202,7 +220,7 @@ dialog h3 { margin: 0 0 12px; }
 .tr-note.wrong { color: #ff6b6b; }
 .trainer .row { display: flex; gap: 12px; }
 .btn.toggle.on { background: var(--panel-2); border-color: var(--accent); color: var(--text); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 /* chord progressions */
 .hm-steps { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 0; min-height: 84px; }
 .hm-steps span { display: flex; flex-direction: column; align-items: center; min-width: 64px; padding: 8px 14px; border: 2px solid var(--line); border-radius: var(--radius); font-size: 32px; font-weight: 700; }

@@ -1,6 +1,6 @@
 // The live connection to the Pi: state 20× a second over a WebSocket.
 import { S } from './state.js';
-import { $, $$, api, fmt, setSeg, toast } from './util.js';
+import { $, $$, api, fmt, ICON, setSeg, toast } from './util.js';
 import { prepareSpelling } from './music.js';
 import { renderTracks, showScorecard } from './controls.js';
 import { playerTitle } from './library.js';
@@ -67,7 +67,10 @@ export function onLive() {
   S.settingsGen = S.live.settings_gen;
   if (S.live.song && (!S.song || S.song.name !== S.live.song)) loadSong();
   if (!S.live.song) S.song = null;
-  $('#play').textContent = S.live.playing ? '⏸' : '▶';
+  if ($('#play').dataset.playing !== String(S.live.playing)) {
+    $('#play').dataset.playing = S.live.playing; // swap the icon only when it changes
+    $('#play').innerHTML = S.live.playing ? ICON.pause : ICON.play;
+  }
   $('#play').setAttribute('aria-label', S.live.playing ? 'Pause' : 'Play');
   $('#waiting').hidden = !(S.live.playing && S.live.waiting);
   const rec = S.live.record;
