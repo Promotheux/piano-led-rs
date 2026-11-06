@@ -39,6 +39,7 @@ main { flex: 1; min-height: 0; position: relative; }
 button:active { transform: scale(.97); }
 
 .toolbar { display: flex; gap: 10px; }
+.toolbar select { min-height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 0 12px; }
 .toolbar input[type=search] { flex: 1; min-height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); padding: 0 16px; }
 .songlist { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
 .songlist li { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; align-items: center; }

@@ -33,6 +33,10 @@
   <section id="library" class="view active">
     <div class="toolbar">
       <input id="search" type="search" placeholder="Search songs…" autocomplete="off">
+      <select id="sort" aria-label="Sort songs">
+        <option value="title">Title A–Z</option>
+        <option value="artist">Artist A–Z</option>
+      </select>
       <label class="btn">Upload .mid<input id="upload" type="file" accept=".mid,.midi,audio/midi" multiple hidden></label>
       <button id="record" class="btn" aria-pressed="false" title="Record what you play to a new song in the library">● Record</button>
     </div>

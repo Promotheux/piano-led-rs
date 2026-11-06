@@ -3,7 +3,6 @@ import { S } from './state.js';
 import { $, api, escapeHtml, player, post, prettyName, songTitle, toast } from './util.js';
 import { show } from './nav.js';
 
- // song name -> { finished, best_tempo, best_accuracy }
 export async function loadSongs() {
   try {
     S.songs = (await api('/api/songs')).songs;
@@ -19,11 +18,26 @@ export function playerTitle(name) {
   const s = (S.songs || []).find((x) => x.name === name) || { name };
   return s.artist ? `${songTitle(s)} · ${s.artist}` : songTitle(s);
 }
+// Natural order, ignoring case: "Song 2" before "Song 10".
+const byText = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+// Title A–Z, or artist A–Z then title (songs without an artist last).
+export function sortSongs(songs, by) {
+  return [...songs].sort((a, b) => {
+    if (by === 'artist' && !a.artist !== !b.artist) return a.artist ? -1 : 1;
+    return (by === 'artist' && a.artist ? byText(a.artist, b.artist) : 0) || byText(songTitle(a), songTitle(b));
+  });
+}
+$('#sort').value = localStorage.getItem('sort') || 'title';
+$('#sort').addEventListener('change', () => {
+  localStorage.setItem('sort', $('#sort').value);
+  renderSongs();
+});
+
 export function renderSongs() {
   const q = $('#search').value.trim().toLowerCase();
   const ul = $('#songs');
   ul.innerHTML = '';
-  for (const s of S.songs) {
+  for (const s of sortSongs(S.songs, $('#sort').value)) {
     if (q && ![s.name, s.title, s.artist].some((t) => t && t.toLowerCase().includes(q))) continue;
     const title = escapeHtml(songTitle(s));
     const li = document.createElement('li');
