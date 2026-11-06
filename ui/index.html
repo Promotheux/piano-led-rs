@@ -30,7 +30,7 @@
 </header>
 
 <main>
-  <!-- Filled by the Svelte Library (ui-src/, built to /dist/library.js). -->
+  <!-- Filled by the Svelte Library (ui-src/, built to /dist/app.js). -->
   <section id="library" class="view active"></section>
 
   <section id="player" class="view">
@@ -197,96 +197,8 @@
     </div>
   </section>
 
-  <section id="settings" class="view">
-    <form id="settingsform" class="settings" autocomplete="off">
-      <h2>Connection</h2>
-      <div class="group">
-        <div class="item"><span class="lbl">Tablet link</span><span class="val" id="h-link">–</span></div>
-        <div class="item"><span class="lbl">MIDI in</span><span class="val" id="h-in">–</span></div>
-        <div class="item"><span class="lbl">MIDI out</span><span class="val" id="h-out">–</span></div>
-        <div class="item"><span class="lbl">LED frame rate</span><span class="val" id="h-fps">–</span></div>
-        <div class="item"><span class="lbl">Tablets connected</span><span class="val" id="h-ws">–</span></div>
-        <div class="item"><span class="lbl">Network MIDI</span><span class="val" id="h-rtp">–</span></div>
-        <label class="item"><span class="lbl">MIDI port (USB)
-          <small>Network MIDI (RTP-MIDI, "Piano LED") is always on as well.</small></span>
-          <select name="midi_port"></select></label>
-      </div>
-
-      <h2>Wi-Fi</h2>
-      <div class="group">
-        <div class="item"><span class="lbl">Connected to</span><b class="val" id="wifinow">…</b></div>
-        <button type="button" class="item action" id="wifiscan">Scan for networks</button>
-        <ul id="wifilist" class="wifilist"></ul>
-        <label class="item"><span class="lbl">Network name</span>
-          <input id="wifissid" type="text" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-        <label class="item"><span class="lbl">Password <small>Leave empty for an open network.</small></span>
-          <input id="wifipass" type="password" maxlength="63" autocomplete="new-password"></label>
-        <button type="button" class="item action" id="wificonnect">Connect the Pi</button>
-      </div>
-      <small id="wifistatus" class="foot"></small>
-
-      <h2>Appearance &amp; LEDs</h2>
-      <div class="group">
-        <label class="item"><span class="lbl">Brightness</span><input name="brightness" type="range" min="0" max="255"></label>
-        <label class="item"><span class="lbl">Key colour</span>
-          <span class="ctl"><select name="colormode"><option value="rainbow">Rainbow</option><option value="spiral">Note colours (C pink … B red)</option><option value="single">Single colour</option></select>
-          <input name="color" type="color" aria-label="Single colour"></span></label>
-        <label class="item"><span class="lbl">Backlight <small>Constant glow along the keys. Slide left to turn it off.</small></span>
-          <span class="ctl"><input name="backlight_brightness" type="range" min="0" max="255" aria-label="Backlight brightness">
-          <input name="backlight_color" type="color" aria-label="Backlight colour"></span></label>
-        <label class="item"><span class="lbl">Right hand hint</span><input name="right_color" type="color"></label>
-        <label class="item"><span class="lbl">Left hand hint</span><input name="left_color" type="color"></label>
-        <label class="item"><span class="lbl">Fade <small>Milliseconds</small></span><input name="fade_ms" type="number" min="0" max="20000" step="50"></label>
-        <label class="item"><span class="lbl">Brightness follows velocity</span><input name="velocity" type="checkbox" class="switch"></label>
-      </div>
-
-      <h2>LED strip</h2>
-      <div class="group">
-        <label class="item"><span class="lbl">LEDs per metre</span><input name="leds_per_meter" type="number" min="1" max="500"></label>
-        <label class="item"><span class="lbl">Shift</span><input name="shift" type="number" min="-500" max="500"></label>
-        <label class="item"><span class="lbl">Reversed <small>LED 0 at the treble end</small></span><input name="reverse" type="checkbox" class="switch"></label>
-        <label class="item"><span class="lbl">LEDs per key</span><input name="span" type="number" min="1" max="16"></label>
-        <label class="item"><span class="lbl">Note offsets <small>note:LEDs, comma separated</small></span><input name="note_offsets" type="text" placeholder="92:2, 55:1"></label>
-        <label class="item"><span class="lbl">Current limit <small>mA, 0 = off</small></span><input name="max_ma" type="number" min="0" step="100"></label>
-        <label class="item"><span class="lbl">LED count <small>Applies after a restart.</small></span><input name="led_count" type="number" min="1" max="2000"></label>
-      </div>
-
-      <h2>Practice &amp; Improv</h2>
-      <div class="group">
-        <label class="item"><span class="lbl">Player view</span>
-          <select name="view_mode"><option value="waterfall">Waterfall (falling notes)</option><option value="sheet">Sheet music (staff)</option></select></label>
-        <label class="item"><span class="lbl">Show note names</span><input name="note_names" type="checkbox" class="switch"></label>
-        <label class="item"><span class="lbl">Hand reach <small id="reachhelp">Semitones. 16 = C3 to E4. Wider chords: the piano plays the notes you can't reach. 0 = off.</small></span>
-          <input name="hand_reach" type="number" min="0" max="48"></label>
-        <label class="item"><span class="lbl">Improv lights</span>
-          <select name="improv_lights">
-            <option value="scale">Chord bright, scale dim</option>
-            <option value="pentatonic">Pentatonic only</option>
-            <option value="chord">Chord tones only</option></select></label>
-        <label class="item"><span class="lbl">Improv split <small>Chords are read below this key; the LEDs guide the keys from here up.</small></span>
-          <select name="improv_split" data-num></select></label>
-      </div>
-
-      <h2>System</h2>
-      <div class="group">
-        <button type="button" class="item action" id="restartplv">Restart plv</button>
-        <button type="button" class="item action danger" id="rebootpi">Reboot Pi</button>
-      </div>
-
-      <h2>Install as app (Android)</h2>
-      <div class="group">
-        <div class="item text">
-          <small id="installstate"></small>
-          <ol class="steps">
-            <li><a class="btn" href="/ca.crt" download>Download certificate</a></li>
-            <li>Android settings → Security → More security settings → Encryption &amp; credentials → Install a certificate → <b>CA certificate</b>, and pick the downloaded file.</li>
-            <li>Open <a id="httpslink" href="#"></a> in Chrome, then menu → <b>Install app</b>.</li>
-          </ol>
-        </div>
-      </div>
-      <small class="foot">The certificate is made by your Pi and only works for it. On an iPad, Share → Add to Home Screen works without this.</small>
-    </form>
-  </section>
+  <!-- Filled by the Svelte Settings (ui-src/, built to /dist/app.js). -->
+  <section id="settings" class="view"></section>
 </main>
 <div id="toast" role="status"></div>
 <script type="module" src="/js/main.js"></script>

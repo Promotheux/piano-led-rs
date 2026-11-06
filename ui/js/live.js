@@ -3,8 +3,7 @@ import { S } from './state.js';
 import { $, api, ICON, setSeg, toast } from './util.js';
 import { prepareSpelling } from './music.js';
 import { renderTracks, showScorecard } from './controls.js';
-import { libraryLive, playerTitle } from '/dist/library.js';
-import { loadSettings, saveTimer } from './settings.js';
+import { libraryLive, loadSettings, playerTitle, savePending, settingsHealth } from '/dist/app.js';
 import { renderTrainer } from './trainer.js';
 import { renderImprov } from './improv.js';
 import { renderHarmony } from './harmony.js';
@@ -34,20 +33,19 @@ export function renderHealth() {
   const age = S.live ? (performance.now() - S.liveAt) / 1000 : Infinity;
   const stale = !wsOpen || age > 2;
   const h = stale ? null : S.live.health;
-  const set = (id, text, bad) => {
-    $(id).textContent = text;
-    $(id).classList.toggle('bad', !!bad);
-  };
-  set('#h-link', !wsOpen ? 'Reconnecting…' : stale ? `No data for ${Math.round(age)} s` : 'Live', stale);
+  const rows = {}; // shown on the Settings page
+  const set = (id, text, bad) => (rows[id] = { text, bad: !!bad });
+  set('link', !wsOpen ? 'Reconnecting…' : stale ? `No data for ${Math.round(age)} s` : 'Live', stale);
   // A network session carries MIDI both ways, so it counts as an input and an output.
   const net = h && h.rtp_peers && h.rtp_peers.length ? `network: ${h.rtp_peers.join(', ')}` : '';
   const ins = h ? [h.midi_in, net].filter(Boolean).join(' + ') : '';
-  set('#h-in', h ? ins || 'No keyboard found' : '–', h && !ins);
+  set('in', h ? ins || 'No keyboard found' : '–', h && !ins);
   const outs = h ? [h.midi_out, net].filter(Boolean).join(' + ') : '';
-  set('#h-out', h ? outs || 'None' : '–', h && !outs);
-  set('#h-fps', h ? `${h.led_fps} fps` : '–', h && !h.led_fps);
-  set('#h-ws', h ? String(h.ws_clients) : '–');
-  set('#h-rtp', h ? (h.rtp_peers && h.rtp_peers.length ? h.rtp_peers.join(', ') : 'No computer connected') : '–');
+  set('out', h ? outs || 'None' : '–', h && !outs);
+  set('fps', h ? `${h.led_fps} fps` : '–', h && !h.led_fps);
+  set('ws', h ? String(h.ws_clients) : '–');
+  set('rtp', h ? (h.rtp_peers && h.rtp_peers.length ? h.rtp_peers.join(', ') : 'No computer connected') : '–');
+  settingsHealth(rows);
   const problem = stale ? 'No connection to the Pi' : !h.midi_in ? 'No keyboard connected' : !h.led_fps ? 'LEDs stalled' : '';
   $('#conn').classList.toggle('on', !problem);
   $('#conn').title = problem || 'Connected';
@@ -63,7 +61,7 @@ export function onLive() {
   renderImprov();
   renderHarmony();
   // Another tablet (or this one) changed settings: reload them.
-  if (S.settingsGen !== null && S.live.settings_gen !== S.settingsGen && !saveTimer) loadSettings();
+  if (S.settingsGen !== null && S.live.settings_gen !== S.settingsGen && !savePending()) loadSettings();
   S.settingsGen = S.live.settings_gen;
   if (S.live.song && (!S.song || S.song.name !== S.live.song)) loadSong();
   if (!S.live.song) S.song = null;

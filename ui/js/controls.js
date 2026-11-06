@@ -3,8 +3,7 @@ import { S } from './state.js';
 import { $, $$, api, escapeHtml, fmt, player, setSeg, toast } from './util.js';
 import { displayPos } from './view.js';
 import { ensureAudio, showMetronome } from './metronome.js';
-import { renderSongs } from '/dist/library.js';
-import { form, save } from './settings.js';
+import { renderSongs, setSetting } from '/dist/app.js';
 
 $('#play').addEventListener('click', () => S.live && player({ playing: !S.live.playing }));
 $('#restart').addEventListener('click', () => player({ seek: -2000 }));
@@ -20,10 +19,8 @@ $$('#hand button').forEach((b) => b.addEventListener('click', () => player({ han
 $$('#view button').forEach((b) =>
   b.addEventListener('click', () => {
     if (!S.settings) return;
-    form.view_mode.value = b.dataset.v;
-    S.settings.view_mode = b.dataset.v; // switch now; the save syncs other tablets
+    setSetting('view_mode', b.dataset.v); // switches now; the save syncs other tablets
     setSeg('#view', b.dataset.v);
-    save();
   })
 );
 $('#ramp').addEventListener('click', () => S.live && player({ ramp: !S.live.ramp }));

@@ -2,7 +2,7 @@
 import { S } from './state.js';
 import { $, $$, post, setSeg, toast } from './util.js';
 import { chordName, fullName, KEY_NAMES } from './music.js';
-import { form, save } from './settings.js';
+import { setSetting } from '/dist/app.js';
 
 // The Pi recognises (or plays) the chord and lights what fits; the tablet
 // names it and holds the controls.
@@ -39,11 +39,8 @@ $('#im-start').addEventListener('click', () => S.live && improv({ active: !S.liv
 // Lights and split are settings (kept across restarts): save them as such.
 $('#im-lights').addEventListener('click', (e) => {
   if (!e.target.dataset.v || !S.settings) return;
-  form.improv_lights.value = e.target.dataset.v;
-  save();
+  setSetting('improv_lights', e.target.dataset.v);
 });
-form.improv_split.innerHTML = Array.from({ length: 49 }, (_, i) => 36 + i)
-  .map((k) => `<option value="${k}">${fullName(k)}</option>`).join('');
 $('#im-key').addEventListener('change', (e) => improv({ key: Number(e.target.value) }));
 $('#im-tempo').addEventListener('input', (e) => ($('#im-tempoval').textContent = e.target.value));
 $('#im-tempo').addEventListener('change', (e) => improv({ tempo: Number(e.target.value) }));
