@@ -101,6 +101,10 @@ button:active { transform: scale(.97); }
   padding: 22px 28px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
 .scorecard h3 { margin: 0; }
 .scorecard .tr-stats { grid-template-columns: repeat(4, auto); }
+/* drag and drop: an overlay while MIDI files are dragged over the page */
+.dropzone { position: fixed; inset: 12px; z-index: 20; display: grid; place-items: center; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: var(--radius); background: rgba(11, 13, 18, .88); }
+.dropzone p { margin: 0; font-size: 22px; font-weight: 600; }
 #record.on { background: #ff6b6b; border-color: #ff6b6b; color: #fff; }
 .badge { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(109,139,255,.18);
   border: 1px solid var(--accent); color: #c9d4ff; padding: 6px 16px; border-radius: 999px; font-weight: 600; }

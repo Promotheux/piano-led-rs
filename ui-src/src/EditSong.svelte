@@ -5,7 +5,9 @@
   import { api, prettyName, toast } from '/js/util.js';
   import { LEVELS, loadSongs } from './store.svelte.js';
 
-  let { song, onclose } = $props();
+  // heading: "Edit song", or "Name the new song" right after an upload.
+  // onclose(name) gets the song's file name after a rename (or the old one).
+  let { song, heading = 'Edit song', onclose } = $props();
 
   // The form starts from the song as it was when opened, on purpose: the list
   // may refresh meanwhile, and that must not overwrite what you are typing.
@@ -17,27 +19,43 @@
   let artist = $state(start.artist || '');
   let difficulty = $state(start.difficulty_set || '');
   let file = $state(name.slice(0, -ext.length));
+  let finalName = name;
+  let closed = false;
+
+  // Tell the Library once, right away: the dialog's own close event can be
+  // held back while the page isn't drawing (a background tab, screen off).
+  function finish() {
+    if (closed) return;
+    closed = true;
+    onclose(finalName);
+  }
+
+  function close(dialog) {
+    dialog.close();
+    finish();
+  }
 
   async function save(e) {
     e.preventDefault();
     const dialog = e.currentTarget.closest('dialog');
     try {
-      await api(`/api/songs?name=${encodeURIComponent(name)}`, {
+      const r = await api(`/api/songs?name=${encodeURIComponent(name)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, artist, difficulty_set: difficulty || null, rename: file.trim() + ext }),
       });
-      dialog.close();
+      finalName = r.name;
+      await loadSongs();
       toast('Saved');
-      loadSongs();
+      close(dialog);
     } catch (err) {
       toast(err.message, true); // keep the dialog open to fix it
     }
   }
 </script>
 
-<dialog {@attach (d) => d.showModal()} aria-labelledby="edit-heading" {onclose}>
-  <h3 id="edit-heading">Edit song</h3>
+<dialog {@attach (d) => d.showModal()} aria-labelledby="edit-heading" onclose={finish}>
+  <h3 id="edit-heading">{heading}</h3>
   <form class="editform" onsubmit={save}>
     <label
       >Title<input type="text" maxlength="200" autocomplete="off" placeholder={prettyName(name)} bind:value={title} /></label
@@ -57,7 +75,7 @@
       ></label
     >
     <div class="actions">
-      <button type="button" class="btn ghost" onclick={(e) => e.currentTarget.closest('dialog').close()}>Cancel</button>
+      <button type="button" class="btn ghost" onclick={(e) => close(e.currentTarget.closest('dialog'))}>Cancel</button>
       <button type="submit" class="btn primary">Save</button>
     </div>
   </form>

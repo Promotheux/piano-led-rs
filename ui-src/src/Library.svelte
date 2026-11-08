@@ -1,6 +1,7 @@
 <script>
-  // The song library: search, sort, filter by difficulty, upload, record,
-  // and the list itself. Styles come from ui/app.css (same classes as before).
+  // The song library: search, sort, filter by difficulty, upload (button or
+  // drag and drop anywhere), record, and the list itself. Styles: ui/app.css.
+  import { tick } from 'svelte';
   import { api, fmt, ICON, player, post, prettyName, songTitle, toast } from '/js/util.js';
   import { show } from '/js/nav.js';
   import { lib, LEVELS, levelOf, loadSongs, sortSongs } from './store.svelte.js';
@@ -10,6 +11,8 @@
   let sort = $state(localStorage.getItem('sort') || 'title');
   let level = $state(localStorage.getItem('level') || ''); // '' = all songs
   let editing = $state(null); // the song in the edit dialog
+  let naming = $state([]); // uploaded songs still to name, in order
+  let dragDepth = $state(0); // > 0 while files are dragged over the page
 
   const counts = $derived.by(() => {
     const c = { '': lib.songs.length };
@@ -68,19 +71,80 @@
     }
   }
 
-  async function upload(e) {
-    for (const f of e.currentTarget.files) {
+  // Uploads the MIDI files, then asks for a name for each new song in turn.
+  async function addFiles(files) {
+    const added = [];
+    for (const f of files) {
+      if (!/\.midi?$/i.test(f.name)) {
+        toast(`${f.name}: not a MIDI file (.mid)`, true);
+        continue;
+      }
       try {
-        await api(`/api/songs?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
-        toast(`Added ${prettyName(f.name)}`);
+        const r = await api(`/api/songs?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
+        added.push(r.name);
       } catch (err) {
         toast(`${f.name}: ${err.message}`, true);
       }
     }
-    e.currentTarget.value = '';
-    loadSongs();
+    if (!added.length) return;
+    await loadSongs();
+    toast(added.length === 1 ? `Added ${prettyName(added[0])}` : `Added ${added.length} songs`);
+    naming = added;
+    nameNext();
+  }
+
+  function nameNext() {
+    editing = lib.songs.find((s) => s.name === naming[0]) ?? null;
+  }
+
+  // The edit dialog closed (saved, or cancelled with Escape).
+  async function editClosed(name) {
+    const fresh = naming.length > 0;
+    editing = null;
+    if (!fresh) return;
+    naming = naming.slice(1);
+    await select(name);
+    if (naming.length) nameNext();
+  }
+
+  // Loads a new song and shows it in the list: clears a search or filter
+  // that would hide it, and scrolls to its row.
+  async function select(name) {
+    query = '';
+    if (level) setLevel('');
+    lib.current = name; // highlight now; the Pi confirms within a moment
+    await player({ song: name });
+    await tick();
+    document.querySelector(`#library li[data-name="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'center' });
+  }
+
+  // Drag and drop: files dragged over any tab bring up the Library to drop on.
+  const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  function dragEnter(e) {
+    if (!hasFiles(e)) return;
+    if (dragDepth++ === 0) show('library');
+  }
+  function dragOver(e) {
+    if (hasFiles(e)) e.preventDefault(); // allow the drop (instead of opening the file)
+  }
+  function drop(e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    addFiles(e.dataTransfer.files);
   }
 </script>
+
+<svelte:window
+  ondragenter={dragEnter}
+  ondragover={dragOver}
+  ondragleave={(e) => hasFiles(e) && (dragDepth = Math.max(0, dragDepth - 1))}
+  ondrop={drop}
+/>
+
+{#if dragDepth > 0}
+  <div class="dropzone" aria-hidden="true"><p>Drop MIDI files to add them to your library</p></div>
+{/if}
 
 <div class="toolbar">
   <input type="search" placeholder="Search songs…" autocomplete="off" aria-label="Search songs" bind:value={query} />
@@ -89,7 +153,18 @@
     <option value="artist">Artist A–Z</option>
     <option value="difficulty">Difficulty (easiest first)</option>
   </select>
-  <label class="btn">Upload .mid<input type="file" accept=".mid,.midi,audio/midi" multiple hidden onchange={upload} /></label>
+  <label class="btn"
+    >Upload .mid<input
+      type="file"
+      accept=".mid,.midi,audio/midi"
+      multiple
+      hidden
+      onchange={(e) => {
+        addFiles([...e.currentTarget.files]);
+        e.currentTarget.value = '';
+      }}
+    /></label
+  >
   <button
     id="record"
     class={['btn', { on: lib.record?.recording }]}
@@ -115,7 +190,7 @@
     {@const l = levelOf(s)}
     <!-- The row loads the song; the buttons inside it are separate targets. -->
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-    <li class={{ current: lib.current === s.name }} onclick={() => open(s)}>
+    <li class={{ current: lib.current === s.name }} data-name={s.name} onclick={() => open(s)}>
       <div class="info">
         <span class="title">{title}</span>
         <span class="artist">{s.artist || ' '}</span>
@@ -160,5 +235,5 @@
 </ul>
 
 {#if editing}
-  <EditSong song={editing} onclose={() => (editing = null)} />
+  <EditSong song={editing} heading={naming.length ? 'Name the new song' : 'Edit song'} onclose={editClosed} />
 {/if}
