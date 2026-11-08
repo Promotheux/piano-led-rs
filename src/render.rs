@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::color::{GammaLut, Rgb};
+use crate::config::{velocity_color, ColorMode};
 use crate::hal::LedDriver;
 use crate::health::Health;
 use crate::keymap::KeyMap;
@@ -66,8 +67,10 @@ impl Default for RenderConfig {
 pub struct Renderer {
     cfg: RenderConfig,
     keymap: KeyMap,
-    /// Base colour per MIDI note (precomputed from the colour mode).
+    /// Base colour per MIDI note (precomputed from the colour mode; a moving
+    /// rainbow refreshes it every frame, Velocity Rainbow on every strike).
     note_color: [Rgb; 128],
+    color_mode: ColorMode,
     /// Current envelope level per note.
     level: [u32; 128],
     /// Peak level for the current strike (velocity-scaled).
@@ -103,6 +106,7 @@ impl Renderer {
             cfg,
             keymap,
             note_color,
+            color_mode: ColorMode::Single(Rgb::BLACK), // set by apply() from the settings
             level: [0; 128],
             peak: [0; 128],
             hand_color: [Rgb::new(0, 0, 255), Rgb::new(255, 128, 0)],
@@ -129,7 +133,8 @@ impl Renderer {
         self.cfg.max_milliamps = s.max_ma;
         self.gamma = GammaLut::new(s.brightness, self.cfg.gamma);
         self.keymap = KeyMap::new(&s.geometry(self.pixels.len() as u16));
-        self.note_color = s.color_mode().note_table();
+        self.color_mode = s.color_mode();
+        self.note_color = self.color_mode.note_table(self.clock_us as f32 / 1e6);
         self.hand_color = s.hand_colors();
         self.backlight = s.backlight();
     }
@@ -155,6 +160,12 @@ impl Renderer {
         let bl_peak = peak(bl);
         let hint_floor = bl_peak.saturating_mul(2);
         self.clock_us = self.clock_us.wrapping_add(dt_us);
+        // A moving rainbow: 128 colours a frame, no allocation.
+        if let ColorMode::Rainbow { speed, .. } = self.color_mode {
+            if speed != 0.0 {
+                self.note_color = self.color_mode.note_table(self.clock_us as f32 / 1e6);
+            }
+        }
         let blink_off = (self.clock_us / BLINK_HALF_US) % 2 == 1;
         let practice = notes.practice();
 
@@ -172,6 +183,9 @@ impl Renderer {
                 // Previews (high nibble) are not "expected yet".
                 let expected = h & 3 != 0 && h & (HINT_BRIGHT | HINT_PREVIEW) == 0;
                 self.feedback[n] = practice.then(|| if expected { RIGHT_KEY } else { WRONG_KEY });
+                if matches!(self.color_mode, ColorMode::Velocity) {
+                    self.note_color[n] = velocity_color(struck);
+                }
                 self.peak[n] = if self.cfg.velocity {
                     // Velocity curve: floor at ~25% so soft notes stay visible.
                     (64 + (struck as u32 * 191) / 127) << 8
@@ -525,6 +539,30 @@ mod tests {
             if r.pixels()[80].is_black() { seen.0 = true } else { seen.1 = true }
         }
         assert_eq!(seen, (true, true), "blinks on and off");
+    }
+
+    #[test]
+    fn velocity_rainbow_colours_each_strike_by_how_hard_it_is() {
+        let mut r = renderer();
+        r.apply(&Settings { color: "velocity".into(), brightness: 255, velocity: false, ..Settings::default() });
+        let notes = NoteState::new();
+        notes.note_on(60, 10); // soft
+        notes.note_on(64, 127); // hard
+        r.update(&notes, Duration::from_millis(16));
+        let (soft, hard) = (r.note_color[60], r.note_color[64]);
+        assert!(soft.b > soft.r, "soft is blue-ish: {soft:?}");
+        assert_eq!(hard, Rgb::new(255, 0, 0), "hard is red");
+    }
+
+    #[test]
+    fn a_moving_rainbow_shifts_while_rendering() {
+        let mut r = renderer();
+        r.apply(&Settings { color: "rainbow".into(), rainbow_speed: 90, ..Settings::default() });
+        let notes = NoteState::new();
+        r.update(&notes, Duration::from_millis(16));
+        let before = r.note_color[60];
+        r.update(&notes, Duration::from_millis(1000));
+        assert_ne!(r.note_color[60], before, "a quarter turn later");
     }
 
     #[test]

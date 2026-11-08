@@ -12,11 +12,22 @@ use crate::render::RenderConfig;
 #[derive(Clone, Debug)]
 pub enum ColorMode {
     Single(Rgb),
-    /// Hue sweeps across the 88 keys (A0..C8).
-    Rainbow,
+    /// Hue sweeps across the 88 keys (A0..C8): `circles` colour circles from
+    /// one end to the other, drifting `speed` degrees per second (0 = still).
+    Rainbow { circles: f32, speed: f32 },
     /// One colour per pitch class, the same in every octave: C magenta
     /// through blue, green and yellow to B red (the "musical spiral").
     Spiral,
+    /// From the lowest key's colour to the highest key's.
+    Gradient(Rgb, Rgb),
+    /// Notes of the major scale on `key` (0 = C) in one colour, the rest in
+    /// another: in C that is white keys against black keys.
+    Scale { key: u8, inside: Rgb, outside: Rgb },
+    /// Colours for key ranges (low, high, colour); keys between ranges blend
+    /// from the neighbouring ranges' colours.
+    Multi(Vec<(u8, u8, Rgb)>),
+    /// The colour follows how hard the key is struck: soft blue to hard red.
+    Velocity,
 }
 
 /// Spiral colours for C, C♯ … B.
@@ -36,10 +47,12 @@ const SPIRAL: [Rgb; 12] = [
 ];
 
 impl ColorMode {
+    pub const RAINBOW: ColorMode = ColorMode::Rainbow { circles: 1.0, speed: 0.0 };
+
     /// `rainbow`, `spiral` or `RRGGBB` / `#RRGGBB`.
     pub fn parse(s: &str) -> Option<Self> {
         if s == "rainbow" {
-            Some(ColorMode::Rainbow)
+            Some(ColorMode::RAINBOW)
         } else if s == "spiral" {
             Some(ColorMode::Spiral)
         } else {
@@ -47,19 +60,109 @@ impl ColorMode {
         }
     }
 
-    pub fn note_table(&self) -> [Rgb; 128] {
+    /// Base colour per MIDI note at `secs` seconds (only a moving rainbow
+    /// changes with time). Allocation-free, so the render loop may call it.
+    pub fn note_table(&self, secs: f32) -> [Rgb; 128] {
         let mut t = [Rgb::BLACK; 128];
         for (n, c) in t.iter_mut().enumerate() {
+            // Position across the 88 keys, 0 (A0) to 1 (C8).
+            let k = (n as f32 - 21.0).clamp(0.0, 87.0) / 87.0;
             *c = match self {
                 ColorMode::Single(c) => *c,
-                ColorMode::Rainbow => {
-                    let k = (n as f32 - 21.0).clamp(0.0, 87.0) / 88.0;
-                    Rgb::from_hsv(k * 360.0, 1.0, 1.0)
+                ColorMode::Rainbow { circles, speed } => {
+                    Rgb::from_hsv((k * 360.0 * circles + secs * speed).rem_euclid(360.0), 1.0, 1.0)
                 }
                 ColorMode::Spiral => SPIRAL[n % 12],
+                ColorMode::Gradient(a, b) => mix(*a, *b, k),
+                ColorMode::Scale { key, inside, outside } => {
+                    if MAJOR.contains(&((n as u8 + 12 - key % 12) % 12)) { *inside } else { *outside }
+                }
+                ColorMode::Multi(ranges) => multi_color(ranges, n as u8),
+                ColorMode::Velocity => velocity_color(64), // each strike picks its own colour
             };
         }
         t
+    }
+}
+
+const MAJOR: [u8; 7] = [0, 2, 4, 5, 7, 9, 11];
+
+/// Straight blend from `a` (t = 0) to `b` (t = 1).
+fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t.clamp(0.0, 1.0)).round() as u8;
+    Rgb::new(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b))
+}
+
+/// Velocity Rainbow: soft (1) blue through green and yellow to hard (127) red.
+pub fn velocity_color(vel: u8) -> Rgb {
+    Rgb::from_hsv(240.0 * (1.0 - vel.min(127) as f32 / 127.0), 1.0, 1.0)
+}
+
+/// Multicolor: a key inside a range takes its colour; one between ranges
+/// blends from the nearest range on each side; past the last range on a side
+/// it keeps that range's colour.
+fn multi_color(ranges: &[(u8, u8, Rgb)], n: u8) -> Rgb {
+    if let Some(&(_, _, c)) = ranges.iter().find(|r| (r.0..=r.1).contains(&n)) {
+        return c;
+    }
+    let below = ranges.iter().filter(|r| r.1 < n).max_by_key(|r| r.1);
+    let above = ranges.iter().filter(|r| r.0 > n).min_by_key(|r| r.0);
+    match (below, above) {
+        (Some(l), Some(h)) => mix(l.2, h.2, (n - l.1) as f32 / (h.0 - l.1) as f32),
+        (Some(r), None) | (None, Some(r)) => r.2,
+        (None, None) => Rgb::new(255, 255, 255),
+    }
+}
+
+#[cfg(test)]
+mod color_mode_tests {
+    use super::*;
+
+    const RED: Rgb = Rgb::new(255, 0, 0);
+    const BLUE: Rgb = Rgb::new(0, 0, 255);
+
+    #[test]
+    fn gradient_runs_from_the_lowest_to_the_highest_key() {
+        let t = ColorMode::Gradient(RED, BLUE).note_table(0.0);
+        assert_eq!((t[21], t[108]), (RED, BLUE));
+        assert!(t[64].r > 0 && t[64].b > 0, "a blend in the middle: {:?}", t[64]);
+    }
+
+    #[test]
+    fn scale_in_c_splits_white_and_black_keys() {
+        let t = ColorMode::Scale { key: 0, inside: RED, outside: BLUE }.note_table(0.0);
+        assert_eq!((t[60], t[62], t[61], t[66]), (RED, RED, BLUE, BLUE), "C D white, C♯ F♯ black");
+        let g = ColorMode::Scale { key: 7, inside: RED, outside: BLUE }.note_table(0.0);
+        assert_eq!((g[66], g[65]), (RED, BLUE), "G major: F♯ in, F out");
+    }
+
+    #[test]
+    fn multicolor_blends_between_ranges() {
+        let t = ColorMode::Multi(vec![(21, 40, RED), (61, 108, BLUE)]).note_table(0.0);
+        assert_eq!((t[30], t[80]), (RED, BLUE));
+        let mid = t[50]; // about halfway between 40 and 61
+        assert!(mid.r > 100 && mid.b > 100, "blended: {mid:?}");
+        let one = ColorMode::Multi(vec![(60, 70, BLUE)]).note_table(0.0);
+        assert_eq!((one[21], one[108]), (BLUE, BLUE), "one range colours the rest too");
+    }
+
+    #[test]
+    fn a_moving_rainbow_drifts_with_time() {
+        let still = ColorMode::RAINBOW;
+        assert_eq!(still.note_table(0.0), still.note_table(10.0));
+        let moving = ColorMode::Rainbow { circles: 1.0, speed: 36.0 };
+        assert_ne!(moving.note_table(0.0)[60], moving.note_table(1.0)[60]);
+        // After 10 s at 36°/s it has gone round exactly once.
+        assert_eq!(moving.note_table(0.0), moving.note_table(10.0));
+        // Two circles: the colour at the middle key comes back to the start colour.
+        let two = ColorMode::Rainbow { circles: 2.0, speed: 0.0 }.note_table(0.0);
+        assert_eq!(two[21], Rgb::new(255, 0, 0));
+    }
+
+    #[test]
+    fn velocity_goes_from_blue_to_red() {
+        assert_eq!(velocity_color(1).b, 255);
+        assert_eq!(velocity_color(127), RED);
     }
 }
 
@@ -90,7 +193,7 @@ impl Default for Config {
         Config {
             geometry: StripGeometry::default(),
             render: RenderConfig::default(),
-            color: ColorMode::Rainbow,
+            color: ColorMode::RAINBOW,
             driver: if !cfg!(target_os = "linux") {
                 DriverKind::Terminal
             } else if cfg!(feature = "pwm") {
@@ -245,7 +348,7 @@ mod tests {
         assert_eq!(c.geometry.note_offsets, vec![(60, 1), (90, -2)]);
         assert_eq!(c.driver, DriverKind::Null);
         assert!(matches!(c.color, ColorMode::Single(Rgb { r: 255, g: 0, b: 0 })));
-        let t = ColorMode::parse("spiral").unwrap().note_table();
+        let t = ColorMode::parse("spiral").unwrap().note_table(0.0);
         assert_eq!((t[60], t[72], t[71]), (Rgb::new(255, 0, 200), Rgb::new(255, 0, 200), Rgb::new(255, 0, 0)), "C pink in every octave, B red");
     }
 

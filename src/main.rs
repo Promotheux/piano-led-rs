@@ -84,7 +84,7 @@ fn main() {
     let mut renderer = Renderer::new(
         cfg.render.clone(),
         KeyMap::new(&initial.geometry(led_count)),
-        initial.color_mode().note_table(),
+        initial.color_mode().note_table(0.0),
     );
     renderer.apply(&initial);
 

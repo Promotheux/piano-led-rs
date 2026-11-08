@@ -1,8 +1,8 @@
 <script>
   // Settings: connection health, Wi-Fi, LEDs, strip, practice, system, install.
   // Every change saves itself; styles come from ui/app.css.
-  import { api, post, toast } from '/js/util.js';
-  import { fullName } from '/js/music.js';
+  import { api, ICON, post, toast } from '/js/util.js';
+  import { fullName, KEY_NAMES } from '/js/music.js';
   import { cfg, scheduleSave } from './settings.svelte.js';
 
   const HEALTH = [
@@ -14,6 +14,21 @@
     ['rtp', 'Network MIDI'],
   ];
   const SPLITS = Array.from({ length: 49 }, (_, i) => 36 + i); // C2 … C6
+  const KEYS = Array.from({ length: 88 }, (_, i) => 21 + i); // A0 … C8
+
+  // Multicolor ranges: add one after the last (or at middle C when the last
+  // already reaches the top key), or remove one, then save.
+  function addRange() {
+    const ranges = cfg.form.multicolor;
+    const end = ranges.at(-1)?.[1] ?? 20;
+    const from = end < 108 ? end + 1 : 60;
+    ranges.push([from, Math.min(108, from + 11), '#ffffff']);
+    scheduleSave(600);
+  }
+  function removeRange(i) {
+    cfg.form.multicolor.splice(i, 1);
+    scheduleSave(600);
+  }
 
   // A setting changed (Wi-Fi fields have no name: they aren't settings).
   function changed(e) {
@@ -154,11 +169,80 @@
           ><select name="colormode" bind:value={f.colormode}>
             <option value="rainbow">Rainbow</option>
             <option value="spiral">Note colours (C pink … B red)</option>
+            <option value="gradient">Gradient</option>
+            <option value="scale">Scale</option>
+            <option value="multicolor">Multicolor (key ranges)</option>
+            <option value="velocity">Velocity rainbow</option>
             <option value="single">Single colour</option>
           </select>
-          <input name="color" type="color" aria-label="Single colour" disabled={f.colormode !== 'single'} bind:value={f.single} /></span
+          {#if f.colormode === 'single'}
+            <input name="color" type="color" aria-label="Single colour" bind:value={f.single} />
+          {/if}</span
         ></label
       >
+      {#if f.colormode === 'rainbow'}
+        <label class="item"
+          ><span class="lbl">Rainbow size <small>{f.rainbow_scale}% of the colour circle across the keys</small></span>
+          <input name="rainbow_scale" type="range" min="10" max="400" step="10" bind:value={f.rainbow_scale} /></label
+        >
+        <label class="item"
+          ><span class="lbl"
+            >Drift <small
+              >{f.rainbow_speed === 0 ? 'Still' : `${Math.abs(f.rainbow_speed)}° a second, ${f.rainbow_speed < 0 ? 'to the left' : 'to the right'}`}</small
+            ></span
+          >
+          <input name="rainbow_speed" type="range" min="-120" max="120" step="5" bind:value={f.rainbow_speed} /></label
+        >
+      {:else if f.colormode === 'gradient'}
+        <div class="item">
+          <span class="lbl">Gradient <small>From the lowest key to the highest</small></span>
+          <span class="ctl">
+            <input name="gradient_colors" type="color" aria-label="Lowest key colour" bind:value={f.gradient_colors[0]} />
+            <input name="gradient_colors" type="color" aria-label="Highest key colour" bind:value={f.gradient_colors[1]} />
+          </span>
+        </div>
+      {:else if f.colormode === 'scale'}
+        <label class="item"
+          ><span class="lbl">Scale <small>Notes of this major scale in one colour, the rest in the other. C: white and black keys.</small></span>
+          <select name="scale_key" bind:value={f.scale_key}>
+            {#each KEY_NAMES as n, i (i)}<option value={i}>{n} major</option>{/each}
+          </select></label
+        >
+        <div class="item">
+          <span class="lbl">Scale colours <small>In the scale, out of it</small></span>
+          <span class="ctl">
+            <input name="scale_colors" type="color" aria-label="In-scale colour" bind:value={f.scale_colors[0]} />
+            <input name="scale_colors" type="color" aria-label="Out-of-scale colour" bind:value={f.scale_colors[1]} />
+          </span>
+        </div>
+      {:else if f.colormode === 'multicolor'}
+        {#each f.multicolor as range, i (i)}
+          <div class="item">
+            <span class="lbl">Range {i + 1}</span>
+            <span class="ctl">
+              <select
+                name="multicolor"
+                aria-label="Range {i + 1} from"
+                bind:value={range[0]}
+                onchange={() => (range[1] = Math.max(range[1], range[0]))}
+              >
+                {#each KEYS as k (k)}<option value={k}>{fullName(k)}</option>{/each}
+              </select>
+              <select name="multicolor" aria-label="Range {i + 1} to" bind:value={range[1]}>
+                {#each KEYS as k (k)}<option value={k} disabled={k < range[0]}>{fullName(k)}</option>{/each}
+              </select>
+              <input name="multicolor" type="color" aria-label="Range {i + 1} colour" bind:value={range[2]} />
+              <!-- A fixed SVG string from util.js, never user data. -->
+              <button type="button" class="icon-btn" aria-label="Remove range {i + 1}" onclick={() => removeRange(i)}>{@html ICON.trash}</button>
+            </span>
+          </div>
+        {/each}
+        {#if f.multicolor.length < 16}
+          <button type="button" class="item action" onclick={addRange}>Add range <small>(keys between ranges blend)</small></button>
+        {/if}
+      {:else if f.colormode === 'velocity'}
+        <div class="item text"><small>Each key's colour follows how hard you strike it: soft blue, through green and yellow, to hard red.</small></div>
+      {/if}
       <label class="item"
         ><span class="lbl">Backlight <small>Constant glow along the keys. Slide left to turn it off.</small></span>
         <span class="ctl"

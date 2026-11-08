@@ -15,6 +15,9 @@ use crate::color::Rgb;
 use crate::config::{ColorMode, Config, VIEW_MODES};
 use crate::keymap::StripGeometry;
 
+/// Named colour modes for `color` (besides a plain `#rrggbb`).
+const COLOR_MODES: [&str; 6] = ["rainbow", "spiral", "gradient", "scale", "multicolor", "velocity"];
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -29,8 +32,21 @@ pub struct Settings {
     pub fade_ms: u32,
     pub velocity: bool,
     pub max_ma: u32,
-    /// Colour of keys you play: `rainbow`, `spiral` or `#rrggbb`.
+    /// Colour of keys you play: `rainbow`, `spiral`, `gradient`, `scale`,
+    /// `multicolor`, `velocity` or `#rrggbb`; the modes' own settings follow.
     pub color: String,
+    /// Rainbow: % of one colour circle across the keyboard (100 = once), and
+    /// how fast it drifts in degrees per second (0 = still, < 0 = the other way).
+    pub rainbow_scale: u16,
+    pub rainbow_speed: i16,
+    /// Gradient: the lowest and the highest key's colour.
+    pub gradient_colors: [String; 2],
+    /// Scale: the key (0 = C … 11 = B) of a major scale, and the colours for
+    /// notes in it and out of it (in C: white and black keys).
+    pub scale_key: u8,
+    pub scale_colors: [String; 2],
+    /// Multicolor: key ranges (low, high, colour); keys between blend.
+    pub multicolor: Vec<(u8, u8, String)>,
     /// Player hint colours per hand.
     pub right_color: String,
     pub left_color: String,
@@ -71,10 +87,16 @@ impl Settings {
             velocity: c.render.velocity,
             max_ma: c.render.max_milliamps,
             color: match c.color {
-                ColorMode::Rainbow => "rainbow".into(),
-                ColorMode::Spiral => "spiral".into(),
                 ColorMode::Single(c) => format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b),
+                ColorMode::Spiral => "spiral".into(),
+                _ => "rainbow".into(), // the command line only knows rainbow, spiral and a colour
             },
+            rainbow_scale: 100,
+            rainbow_speed: 0,
+            gradient_colors: ["#2f7cff".into(), "#ff2d75".into()],
+            scale_key: 0,
+            scale_colors: ["#ffffff".into(), "#ff2020".into()],
+            multicolor: vec![(21, 47, "#2f7cff".into()), (48, 71, "#3ddc97".into()), (72, 108, "#ff8a1f".into())],
             right_color: "#2f7cff".into(),
             left_color: "#ff8a1f".into(),
             midi_port: c.midi_port.clone(),
@@ -100,7 +122,20 @@ impl Settings {
         check(self.note_offsets.iter().all(|&(_, o)| o.abs() <= 100), "note offset out of range")?;
         check((1..=16).contains(&self.span), "span must be 1..=16")?;
         check(self.fade_ms <= 20_000, "fade too long")?;
-        check(["rainbow", "spiral"].contains(&self.color.as_str()) || hex(&self.color), "color must be rainbow, spiral or #rrggbb")?;
+        check(
+            COLOR_MODES.contains(&self.color.as_str()) || hex(&self.color),
+            "color must be rainbow, spiral, gradient, scale, multicolor, velocity or #rrggbb",
+        )?;
+        check((10..=1000).contains(&self.rainbow_scale), "rainbow_scale must be 10..=1000 (%)")?;
+        check(self.rainbow_speed.abs() <= 360, "rainbow_speed must be -360..=360 (°/s)")?;
+        check(self.gradient_colors.iter().all(|c| hex(c)), "gradient_colors must be #rrggbb")?;
+        check(self.scale_key < 12, "scale_key must be 0..=11")?;
+        check(self.scale_colors.iter().all(|c| hex(c)), "scale_colors must be #rrggbb")?;
+        check(self.multicolor.len() <= 16, "at most 16 multicolor ranges")?;
+        check(
+            self.multicolor.iter().all(|(lo, hi, c)| (21..=108).contains(lo) && (*lo..=108).contains(hi) && hex(c)),
+            "multicolor ranges must be low..=high within 21..=108 (A0..C8), each with a #rrggbb colour",
+        )?;
         check(hex(&self.right_color), "right_color must be #rrggbb")?;
         check(hex(&self.left_color), "left_color must be #rrggbb")?;
         check(hex(&self.backlight_color), "backlight_color must be #rrggbb")?;
@@ -122,7 +157,19 @@ impl Settings {
     }
 
     pub fn color_mode(&self) -> ColorMode {
-        ColorMode::parse(&self.color).unwrap_or(ColorMode::Rainbow)
+        let rgb = |s: &str| Rgb::from_hex(s).unwrap_or(Rgb::new(255, 255, 255));
+        match self.color.as_str() {
+            "rainbow" => ColorMode::Rainbow { circles: self.rainbow_scale as f32 / 100.0, speed: self.rainbow_speed as f32 },
+            "gradient" => ColorMode::Gradient(rgb(&self.gradient_colors[0]), rgb(&self.gradient_colors[1])),
+            "scale" => ColorMode::Scale {
+                key: self.scale_key,
+                inside: rgb(&self.scale_colors[0]),
+                outside: rgb(&self.scale_colors[1]),
+            },
+            "multicolor" => ColorMode::Multi(self.multicolor.iter().map(|(lo, hi, c)| (*lo, *hi, rgb(c))).collect()),
+            "velocity" => ColorMode::Velocity,
+            other => ColorMode::parse(other).unwrap_or(ColorMode::RAINBOW),
+        }
     }
 
     pub fn hand_colors(&self) -> [Rgb; 2] {
@@ -219,6 +266,29 @@ mod tests {
         let partial: Settings = serde_json::from_str(r#"{"brightness": 10}"#).unwrap();
         assert_eq!(partial.brightness, 10);
         assert_eq!(partial.led_count, s.led_count);
+    }
+
+    #[test]
+    fn colour_modes_and_their_settings() {
+        let mut s = Settings::default();
+        for mode in COLOR_MODES {
+            s.color = mode.into();
+            assert!(s.validate().is_ok(), "{mode}");
+        }
+        s.color = "multicolor".into();
+        assert!(matches!(s.color_mode(), ColorMode::Multi(r) if r.len() == 3));
+        s.multicolor = vec![(60, 50, "#ff0000".into())];
+        assert!(s.validate().is_err(), "low above high");
+        s.multicolor = vec![(10, 50, "#ff0000".into())];
+        assert!(s.validate().is_err(), "below A0");
+        s.multicolor = vec![(21, 50, "red".into())];
+        assert!(s.validate().is_err(), "not #rrggbb");
+        s = Settings { rainbow_speed: 400, ..Settings::default() };
+        assert!(s.validate().is_err());
+        s = Settings { scale_key: 12, ..Settings::default() };
+        assert!(s.validate().is_err());
+        s = Settings { color: "rainbow".into(), rainbow_scale: 200, rainbow_speed: -30, ..Settings::default() };
+        assert!(matches!(s.color_mode(), ColorMode::Rainbow { circles, speed } if circles == 2.0 && speed == -30.0));
     }
 
     #[test]
