@@ -128,6 +128,7 @@ fn handle(app: &Arc<App>, mut req: Request) {
         (Method::Post, "/api/songs") => upload(app, &mut req, query),
         (Method::Put, "/api/songs") => edit_song(app, &mut req, query),
         (Method::Delete, "/api/songs") => delete_song(app, query),
+        (Method::Get, "/api/songs/file") => download_song(app, query),
         (Method::Get, "/api/settings") => json(&app.settings.get()),
         (Method::Put, "/api/settings") => put_settings(app, &mut req),
         (Method::Get, "/api/ports") => match midi::list_ports() {
@@ -550,6 +551,22 @@ fn find_duplicate(dir: &Path, body: &[u8]) -> Option<String> {
         let same_size = e.metadata().ok()?.len() == body.len() as u64;
         (same_size && std::fs::read(e.path()).ok()? == body).then_some(name)
     })
+}
+
+/// `GET /api/songs/file?name=<file>`: the MIDI file itself, as a download
+/// (the page's link names the file, so no name is needed in the header).
+fn download_song(app: &App, query: &str) -> Resp {
+    let name = name_param(query);
+    let Some(path) = song_path(&app.songs_dir, &name) else {
+        return error(400, "invalid song name");
+    };
+    match std::fs::read(&path) {
+        Ok(bytes) => Response::from_data(bytes)
+            .with_header(header("Content-Type", "audio/midi"))
+            .with_header(header("Content-Disposition", "attachment")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => error(404, "no such song"),
+        Err(e) => error(500, &format!("read failed: {e}")),
+    }
 }
 
 fn delete_song(app: &App, query: &str) -> Resp {

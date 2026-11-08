@@ -221,6 +221,13 @@
             editing = s;
           }}>{@html ICON.edit}</button
         >
+        <a
+          class="icon-btn download"
+          href="/api/songs/file?name={encodeURIComponent(s.name)}"
+          download={s.name}
+          aria-label="Download {title}"
+          onclick={(e) => e.stopPropagation()}>{@html ICON.download}</a
+        >
         <button
           class="icon-btn del"
           aria-label="Delete {title}"
